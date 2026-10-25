@@ -1,7 +1,0 @@
-# Ukrainian abbreviation-aware tokenizer with exact-text spaCy integration.
-tokenize-uk[spacy]==2.0.0
-# Pin compatible releases for the project's Python 3.9 environment.
-spacy==3.8.7
-thinc==8.3.9
-# Used directly for batch assignment of spaCy sentence-boundary flags.
-numpy==2.0.2

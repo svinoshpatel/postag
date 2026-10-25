@@ -2,8 +2,6 @@
 __pycache__/
 *.py[cod]
 .DS_Store
-# Downloaded dictionary and reproducible experiment outputs (keep provenance).
-data/dict_uk/*.bz2
-runs/*
-!runs/README.md
+
 /data/tokenized/
+/literature

@@ -17,7 +17,7 @@ DEFAULT_OUTPUT = BASE_DIR / "data" / "tokenized"
 
 @lru_cache(maxsize=1)
 def get_pipeline():
-    """Create the abbreviation-aware pipeline once, including for imported use."""
+    """Create the abbreviation-aware pipeline at once, including for imported use."""
     try:
         from tokenize_uk.spacy import blank_pipeline
     except ImportError as error:
