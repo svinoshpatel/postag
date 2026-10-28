@@ -232,6 +232,62 @@ Generate a unique `run_id` automatically. Write each run into new directories; r
 
 Reused models reference their existing candidate IDs; do not create records claiming another fit occurred. Keep models on disk between fits rather than retaining all candidate estimators in memory.
 
+### Run Lifecycle Foundation (2026-10-28)
+
+`allocate_run()` generates UUID-based ASCII run IDs. Development reserves new
+report, interim, processed, and model directories; prediction reserves only a
+new report directory. Existing run paths in any artifact tree cause a new ID
+to be tried, never reuse. A failure after partial allocation leaves incomplete
+directories without completion metadata; there is no automatic resume or
+rollback of existing artifacts. Allocation is intentionally nondeterministic
+and does not affect seeded data ordering or model selection.
+
+Artifact writers use directory-relative operations with symlink following
+disabled on directory traversal. A fresh temporary file in the destination
+directory is flushed/fsynced and validated before a hard-link operation
+publishes the final name without replacement. Concurrent publishers can have
+only one winner; existing files, directories, hard links and dangling symlinks
+are preserved. Failed writes/validation never publish a final filename.
+Only the writer's own temporary entry is cleaned up. Filesystem support for
+these POSIX operations is required; unsupported operations fail explicitly.
+This protects against ordinary concurrent writers/path redirection, not hostile
+renaming of the repository itself or guaranteed durability after power loss.
+
+`publish_completion()` requires a caller-supplied schema/integrity validator
+and a memory monitor. It validates an encoded snapshot, checks the containing
+run ID, status/error consistency and observed peak, and requires monitoring to
+have finished. Successful publication additionally requires a successful monitor
+context; a body exception prevents it even if no memory violation occurred.
+`load_completed()` runs the same supplied schema/integrity validation and rejects missing, failed, malformed
+or inconsistent completion metadata. It never treats directory existence as
+success. These generic helpers do not replace later development/evaluation/
+prediction validators: callers must validate all stage-specific fields, linked
+checksums, models, trial counts and metric consistency before authorizing a
+completed run. A failed descriptor may be published despite a latched resource
+failure; it cannot authorize success.
+
+`configure_logging()` configures the `crf` logger hierarchy on stderr with
+propagation disabled and leaves unrelated application loggers alone. Repeated
+configuration replaces its handler so messages are not duplicated; result data
+remains the CLI's responsibility on stdout.
+
+`MemoryMonitor` is a mutable runtime controller because samples, peak memory,
+thread state and the first failure change during execution. Its context samples
+at entry, in a background thread (default 0.1 seconds), at explicit checkpoints,
+and on exit. Samples sum RSS bytes for the main process and recursively found
+workers, counting each process once. Exited children may disappear between
+samples; access-denied/root-monitoring errors fail closed. Budget equality is
+permitted; a strict exceedance or monitoring failure is latched permanently.
+Background failure interrupts the pipeline's main Python thread; checkpoints
+and context exit raise the recorded resource exception. Callers must own their
+pipeline process, use the context on its main thread, and clean up owned workers
+in `finally` blocks when interruption unwinds execution. The foundation does not
+kill unrelated processes or publish failure descriptors automatically.
+Native code may delay Python interruption, short spikes may occur between
+samples, and shared pages can be counted in multiple processes; this remains
+best-effort aggregate RSS monitoring, not an operating-system memory limit.
+Later training/CLI stages must use this context and guard completion publication.
+
 ### Streamable Dataset Records
 
 Use UTF-8 JSONL: one complete sentence object per line, LF line endings, no BOM, and `schema_version: 1`. Reject unsupported schema versions and nonfinite numeric values. The reference format is [JSON Lines](https://jsonlines.org/).
@@ -305,8 +361,7 @@ overflowing exponents), BOMs, and invalid Unicode. JSONL reads one object at a
 time, rejects blank lines and CRLF, and reports the path and physical line.
 A complete final JSON object without a trailing LF is accepted on input;
 encoded JSONL records always end in LF. Writers here return encoded bytes and
-do not open or publish output files. Run allocation and atomic completion remain
-the third foundation task; model/trial/metric schemas remain their later tasks.
+do not open or publish output files. Run allocation and atomic completion use the lifecycle foundation above; model/trial/metric schemas remain their later tasks.
 
 Input identities are computed automatically in gold-role order followed by flat,
 filename-sorted eligible literature files. Identity discovery validates source
@@ -601,8 +656,8 @@ Development must use `load_config()` or explicitly call `validate_input_paths()`
 external standalone inputs. `validate_output_path()` checks a proposed fresh
 output under `data/interim/`, `data/processed/`, `models/`, or `reports/`, rejecting
 existing entries (including dangling symlinks), symlinked output ancestors,
-resolved escapes, and raw-input locations. It performs no allocation; race-safe
-unique allocation and publication remain the next foundation tasks.
+resolved escapes, and raw-input locations. It performs no allocation; the lifecycle foundation provides race-safe
+unique allocation and publication.
 
 Freeze effective configuration, input identities, dataset identities, preprocessing versions, selected model references, and evaluation settings only after every planned configuration has a successful fitted or permitted reused result. Evaluation accepts no new configuration or parameter overrides. Its `--seed`, when supplied, is an assertion that must equal the frozen bootstrap seed; when omitted, use that frozen seed. Reject an incomplete experiment, changed inputs, incompatible preprocessing/dependencies, or a model/checksum mismatch before computing test predictions. If evaluation already completed, verify and return the stored results without recomputing them. Never overwrite partial or completed evaluation artifacts or present a failed attempt as complete.
 

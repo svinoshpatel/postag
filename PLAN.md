@@ -6,7 +6,7 @@ See [AGENTS.md](AGENTS.md) for operating procedures and [docs/ARCH.md](docs/ARCH
 
 Implement a reproducible Ukrainian CRF self-training pipeline with isolated development and final evaluation, usable raw-text inference, and validated run artifacts. Preserve the approved experiment design and original datasets.
 
-Milestone 1 is implemented: the locked CPython 3.14 environment and installable `src/crf/` foundations replace the incompatible `postag/` experiments. Milestone 2 tasks 1–2 are implemented; the remaining later tasks are unchecked. The tokenizer backend and surface features do not establish a complete preprocessing or training pipeline.
+Milestone 1 is implemented: the locked CPython 3.14 environment and installable `src/crf/` foundations replace the incompatible `postag/` experiments. Milestone 2 is implemented: strict configuration, typed records and identities, safe artifact publication, logging, and resource monitoring are verified. Later milestones remain unchecked. The tokenizer backend and surface features do not establish a complete preprocessing or training pipeline.
 
 Gold-corpus availability, release identity, and compatibility checks are pending. Small deterministic fixtures support implementation and offline verification without production data. Full corpus runs have a separate readiness gate below; missing inputs must not be replaced with another split or fabricated data. No sprint duration or delivery estimate is assumed.
 
@@ -52,7 +52,7 @@ Prerequisite: milestone 1. Architecture: [Artifact & Run Contracts](docs/ARCH.md
 
 - [x] Implement strict YAML configuration validation, documented defaults, seed precedence, version checks, and repository-relative path resolution. Acceptance: invalid/duplicate/unknown fields and incompatible settings fail explicitly; gold split aliases and source/output path violations are rejected.
 - [x] Implement typed sentence records, JSON/JSONL validators, canonical configuration hashing, deterministic sentence identities, and automatic input identities. Acceptance: exact schema fields, types, checksums, alignment, and nullability are enforced without exposing labels to feature code.
-- [ ] Implement unique output allocation, publish-once completion handling, logging, and aggregate RSS monitoring. Acceptance: existing artifacts and raw inputs cannot be overwritten, diagnostics remain on stderr, budget violations fail, and incomplete runs cannot be treated as successful.
+- [x] Implement unique output allocation, publish-once completion handling, logging, and aggregate RSS monitoring. Acceptance: existing artifacts and raw inputs cannot be overwritten, diagnostics remain on stderr, budget violations fail, and incomplete runs cannot be treated as successful.
 
 Milestone 2 task 1 verification (2026-10-28): 88 new deterministic configuration/path tests pass; all 108 repository tests and strict core types (9 source files) pass. Changed-code Ruff lint and formatting pass. Full repository lint/format retain only the unchanged `scripts/fetch_dictionary.py` failures, reproduced before implementation (I001 and required formatting); this is the permitted pre-existing-failure exception. No checks were weakened, no production inputs were read, and no pipeline artifacts were generated. Unique output allocation, content auditing, artifact schemas/hashes, and future pipeline CLIs remain unchecked subsequent tasks.
 
@@ -84,6 +84,24 @@ Milestone 2 task 2 verification (2026-10-28): 119 new offline serialization/iden
 - Sentence factories enforce exact top-level/nested fields, schema version 1, strict integer/probability types, nonempty aligned arrays, consecutive IDs, ordered bounded spans (requiring decoded-source length), gold/pseudo nullability, original UD inventory, configured target mapping/inventory, input bindings, provenance IDs, minimum confidence, and seed-derived priority. Test-label records require explicit final evaluation. Immutable tuples preserve alignment; features receive forms only.
 - Canonical effective-config hashing uses complete settings and the exact sorted compact UTF-8 JSON encoding without newline. Sentence IDs use the specified ordered provenance array. File checksums/size use original bounded byte reads and observed-change detection; identity verification rehashes current sources. Input discovery is flat and deterministic, rejects symlinks/gold aliases and empty literature, and does not interpret annotations.
 - Deterministic tests will independently derive hash expectations, round-trip gold/pseudo/input records, mutate schema/types/alignments/nullability/provenance/spans, exercise strict JSON failure diagnostics and incremental reading, and verify source order, opaque test bytes, path failures and changed-byte rejection. Fingerprint/model-content and linguistic normalization verification remain with their later owning stages; no production data, model artifact, or output publication is needed.
+
+Milestone 2 completion verification (2026-10-28): all three foundation tasks meet their fixture-based acceptance criteria. Task 3 adds 47 passing lifecycle/resource tests, including an isolated child-process interruption integration test; the full suite passes 274 tests and strict mypy passes all 15 core files. New Python files pass separate Ruff lint and formatting checks. Repository-wide lint and formatting retain only the unchanged `scripts/fetch_dictionary.py` I001/formatting failures, reproduced before implementation; this is the permitted pre-existing-failure exception. Checks were not weakened. `git diff --check` passes. Raw data and existing generated artifacts were untouched; all new lifecycle artifacts were created only in pytest temporary directories, covered by existing ignore patterns when used in the repository. The pre-existing staged/worktree state of `main.py` was preserved.
+
+Lifecycle limits: POSIX directory descriptors/no-follow traversal and hard-link publication are verified on macOS; unsupported filesystems fail rather than falling back to clobbering writes. RSS monitoring is best effort, with documented sampling/native-code limits and caller-owned worker cleanup. Later orchestration stages must supply their complete schema/link validators and integrate the monitor; no development search, model training run, final evaluation, or corpus-readiness result is claimed by this milestone.
+
+#### Milestone 2, task 3 execution steps (2026-10-28)
+
+1. Document run-allocation, atomic publication, completion-validation, logging, and memory-monitor integration boundaries before implementation.
+2. Implement reusable lifecycle helpers with no-clobber filesystem operations, explicit completion validators, stderr diagnostics, and sticky aggregate-RSS failures.
+3. Record specification/boundary review before deterministic failure/race tests; run focused and full required checks, then mark milestone 2 complete only when acceptance is verified.
+
+#### Milestone 2, task 3 specification review before tests
+
+- Allocation uses UUID run IDs and exclusive directory creation, checks every artifact tree for collisions, and never reuses partial runs. Development creates four trees; prediction creates reports only. Resolved path checks and no-follow descriptor traversal protect raw inputs and reject symlinked ancestors. Partial allocation fails without a completion record.
+- Atomic writers stage new temporary entries, flush/fsync, validate a read-only stream, and hard-link the final name without replacement. Body/validation failures leave no final name; competing or pre-existing files/directories/dangling links survive. Cleanup removes only this writer's temporary entry.
+- Completion helpers validate an encoded snapshot, containing run identity, version/status/error semantics, exact monitor peak and finished monitoring. Successful publication additionally requires no latched monitoring failure or context-body abort; failed records can still describe failure. A mandatory caller validator owns exact stage schemas and all linked integrity checks. Loading rejects absent/failed/partial/invalid descriptors and never infers success from files/directories alone.
+- Logging installs one stderr handler for the crf hierarchy without root-logger changes. The mutable RSS controller samples root plus recursive workers, tolerates exited children, fails closed on monitoring errors, permits budget equality, retains the peak/first failure, interrupts the main thread on background failure, and raises at checkpoints/context exit. Later pipeline stages must integrate it and clean up owned workers; sampling/native-code limits are documented.
+- Tests will use temporary artifact trees and controlled samplers/process observations, cover collisions and concurrent publication, validation/write failures, existing/raw/symlink protection, missing/failed/corrupt completions, checksum-validator rejection, logging isolation, root/worker RSS accounting, sticky failures, interruption and clean monitor shutdown. No production dataset or existing generated artifact will be changed.
 
 ### 3. Implement Gold Parsing, Target Mapping, and Features
 
@@ -160,8 +178,8 @@ Update this table with the actual command result, date, and relevant evidence du
 |---|---|---|
 | Lint | `uv run ruff check .` | Failed: unchanged `scripts/fetch_dictionary.py` I001; changed-code lint passed |
 | Formatting | `uv run ruff format --check .` | Failed: unchanged `scripts/fetch_dictionary.py` requires formatting; changed-code formatting passed |
-| Types | `uv run mypy src/crf/` | Passed (2026-10-28): 12 source files |
-| Tests | `uv run pytest tests/ -v` | Passed (2026-10-28): 227 tests, including 88 configuration/path tests, 119 serialization/identity/record tests, and one offline integration test |
+| Types | `uv run mypy src/crf/` | Passed (2026-10-28): 15 source files |
+| Tests | `uv run pytest tests/ -v` | Passed (2026-10-28): 274 tests, including 47 lifecycle/resource tests and two offline integration tests |
 
 ## Open Dependencies and Blockers
 
