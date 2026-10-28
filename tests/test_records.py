@@ -352,3 +352,39 @@ def test_pseudo_target_inventory_and_seed_binding(
             source=source,
             decoded_source_length=5,
         )
+
+
+@pytest.mark.parametrize("pseudo", [False, True])
+@pytest.mark.parametrize(
+    ("original", "normalized", "bad"),
+    [
+        ("сім’я", "сім'я", "сім’я"),
+        ("І\u0308", "Ї", "І\u0308"),
+        ("ҐАНОК", "ҐАНОК", "ґанок"),
+        ("а\u00a0б", "а б", "а\u00a0б"),
+        ("кіт\u200b", "кіт\u200b", "кіт"),
+    ],
+)
+def test_normalized_forms_match_originals(
+    artifact_config: PipelineConfig,
+    artifact_sources: tuple[InputIdentity, ...],
+    pseudo: bool,
+    original: str,
+    normalized: str,
+    bad: str,
+) -> None:
+    source = artifact_sources[-1 if pseudo else 0]
+    value = sentence(source, pseudo=pseudo) | {
+        "original_forms": [original, "_"],
+        "normalized_forms": [normalized, "_"],
+        "token_spans": [None, None],
+    }
+    record = parse_sentence_record(value, config=artifact_config, source=source)
+    assert record.original_forms == (original, "_")
+    assert record.normalized_forms == (normalized, "_")
+    with pytest.raises(ValidationError, match="normalized_forms"):
+        parse_sentence_record(
+            value | {"normalized_forms": [bad, "_"]},
+            config=artifact_config,
+            source=source,
+        )

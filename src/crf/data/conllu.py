@@ -19,6 +19,8 @@ from crf.data.identity import (
     verify_input_identity,
 )
 from crf.data.labels import TagMappingError, validate_upos
+from crf.data.normalization import NormalizationError, normalize_forms
+from crf.data.records import SentenceRecord, parse_sentence_record
 from crf.utils.config import ConfigError, PipelineConfig
 from crf.utils.serialization import ValidationError
 
@@ -58,6 +60,51 @@ class GoldSentence:
     original_upos: tuple[str, ...]
     target_labels: tuple[str, ...]
     comments: tuple[str, ...]
+
+    def to_record(
+        self, config: PipelineConfig, *, final_evaluation: bool = False
+    ) -> SentenceRecord:
+        """Normalize a parsed sentence without publishing or guessing word offsets."""
+        audit = self.audit
+        if type(final_evaluation) is not bool:
+            raise ValidationError("final_evaluation: expected boolean")
+        if audit.source.source_role == "test_gold" and not final_evaluation:
+            raise ValidationError(
+                "test_gold records are restricted to final evaluation"
+            )
+        try:
+            normalized = normalize_forms(
+                audit.original_forms, version=config.preprocessing.normalizer_version
+            )
+        except NormalizationError as exc:
+            raise _error(
+                Path(audit.source.source_path), audit.line_number, str(exc)
+            ) from exc
+        record = SentenceRecord(
+            schema_version=1,
+            record_type="gold",
+            sentence_id=audit.sentence_id,
+            source_path=audit.source.source_path,
+            source_sha256=audit.source.source_sha256,
+            source_role=audit.source.source_role,
+            sentence_ordinal=audit.sentence_ordinal,
+            paragraph_ordinal=None,
+            surface_text=audit.surface_text,
+            surface_text_origin=audit.surface_text_origin,
+            token_ids=audit.token_ids,
+            original_forms=audit.original_forms,
+            normalized_forms=normalized,
+            token_spans=(None,) * len(audit.token_ids),
+            original_upos=self.original_upos,
+            target_labels=self.target_labels,
+            pseudo=None,
+        )
+        return parse_sentence_record(
+            record.to_dict(),
+            config=config,
+            source=audit.source,
+            final_evaluation=final_evaluation,
+        )
 
 
 def _error(path: Path, line: int, reason: str) -> ValidationError:
@@ -320,3 +367,17 @@ def iter_gold_sentences(
     ):
         targets = label_space.map_upos(labels)
         yield GoldSentence(audit, labels, targets, comments)
+
+
+def iter_gold_records(
+    source: InputIdentity,
+    config: PipelineConfig,
+    repository_root: Path,
+    *,
+    final_evaluation: bool = False,
+) -> Iterator[SentenceRecord]:
+    """Stream validated normalized gold records; retain parser metadata separately."""
+    for parsed in iter_gold_sentences(
+        source, config, repository_root, final_evaluation=final_evaluation
+    ):
+        yield parsed.to_record(config, final_evaluation=final_evaluation)

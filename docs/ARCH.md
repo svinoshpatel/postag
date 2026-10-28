@@ -33,9 +33,10 @@ The project uses two main data sources:
 `crf.data.conllu.iter_gold_sentences()` emits immutable `GoldSentence` records
 with original UPOS and target labels using the configuration's already-validated
 mapping (identical to UPOS by default). These are parser outputs,
-not normalized `SentenceRecord` artifacts. The shared mapping API below now
-verifies target-space consistency; the normalization task will assemble normalized artifacts;
-this parser deliberately has no feature-form interface. Test-label parsing
+not normalized `SentenceRecord` artifacts. The shared mapping API below
+verifies target-space consistency; `GoldSentence.to_record()` and
+`iter_gold_records()` assemble validated, normalized records without publishing
+artifacts. Only the resulting record exposes feature forms. Test-label parsing
 requires `final_evaluation=True` before source access. Both parser and audit take
 a configured `InputIdentity` and repository root, verify its current opaque-byte
 checksum before reading, and check streamed bytes again at EOF. Consumers must
@@ -111,8 +112,8 @@ arrays by the dataset schema; no wire-format/schema version change is required.
 The inventory is derived from configuration rather than added as an unknown
 configuration/dataset field. Future models, metrics and prediction stages must
 consume this same API and persist/check their already-prescribed inventory fields.
-This task does not implement those stages or normalize/assemble gold dataset
-artifacts; mapped confidence aggregation or post-hoc prediction relabeling is not
+This label-space task does not implement those stages; gold-record normalization
+is supplied by the shared normalizer below. Mapped confidence aggregation or post-hoc prediction relabeling is not
 provided.
 
 ### Core Methodology: Two-Stage Self-Training Workflow
@@ -282,8 +283,9 @@ not supported by the new package.
 Milestone 1 establishes the surface-form feature extractor and a low-level tokenizer
 backend operating on a caller-supplied paragraph. The backend preserves original slices
 using upstream span offsets and uses the non-legacy APIs without spaCy. It is not yet
-the production raw-text/UD adapter: normalization with source alignment, UD boundary
-adaptation, bounded file streaming, exclusions, and provenance remain milestones 3–4.
+the production raw-text/UD adapter: integration of the shared aligned normalizer,
+UD boundary adaptation, bounded file streaming, exclusions, and provenance remain
+milestone 4 work.
 The preview entry point accepts text only and writes JSON to stdout; it produces no
 training artifacts and is not a substitute for the future pipeline or prediction CLIs.
 
@@ -422,9 +424,9 @@ These foundation validators enforce schema, label inventory/mapping consistency,
 input bindings, sentence IDs, and seed-derived pseudo sampling priorities. They
 validate fingerprint and gate checksums as SHA-256 strings; verification against
 normalized source text and an actual model bundle belongs to the later
-contamination/model-loading stages. Normalized forms are checked for type and
-alignment here; their linguistic transformation is verified by the shared
-normalizer in milestone 3. Original CoNLL-U comments/reconstruction metadata
+contamination/model-loading stages. Normalized forms are checked for type,
+alignment and equality with the shared versioned normalization of original forms.
+Original CoNLL-U comments/reconstruction metadata
 remain the loader's separate provenance responsibility.
 
 JSON readers reject duplicate keys at every depth, nonfinite values (including
@@ -751,6 +753,56 @@ Changing literature inputs is supported by starting a new development run, with 
 
 * **Cyrillic preservation:** Preserve Ukrainian letter distinctions, including `г/ґ`, `и/і`, `е/є`, and `і/ї`, and preserve the soft sign. Do not transliterate or replace Latin/Cyrillic lookalikes. Do not silently strip combining stress marks, soft hyphens, or zero-width characters; retain them and report occurrences of formatting characters.
 * **Casing before lexical lowercasing:** Compute `is_title`, `is_uppercase`, and `is_lowercase` on the normalized, case-preserving token using Python's Unicode-aware `istitle()`, `isupper()`, and `islower()`. These flags are independent. Then derive the lexical feature form by lowercasing and applying NFC again. Do not lowercase text before sentence segmentation. For example, `ҐАНОК` keeps its uppercase flag while its lexical feature form becomes `ґанок`. See [Python string operations](https://docs.python.org/3/library/stdtypes.html).
+
+#### Versioned normalizer and source alignment (M3 task 3, 2026-10-28)
+
+`crf.data.normalization` implements version 1 with the running Python Unicode
+database version. `normalize_text()` accepts a complete decoded paragraph (or
+bounded text unit) and its nonnegative absolute `source_offset`. It removes one
+leading BOM only at absolute file offset zero, converts CRLF/CR to LF, then
+applies NFC and the specified apostrophe/space mappings. It neither lowercases
+nor collapses whitespace. Callers retain paragraph boundaries and must not split
+CRLF pairs or Unicode normalization units at read-buffer boundaries; the future
+M4 streaming adapter owns assembling complete paragraphs before normalization.
+The existing low-level tokenizer/preview remains unchanged until that adapter
+is implemented; it is not a production normalization/inference interface.
+
+The immutable result retains original/normalized text, absolute source intervals
+for each normalized character, formatting-character observations, normalizer
+version and Unicode version. NFC normalization units include starters and their
+combining marks and any interacting zero-combining-class compositions (including
+Hangul). Every output character in a unit refers conservatively to the unit's
+whole original interval, handling composition, expansion and canonical reordering
+without claiming a one-to-one mapping. `source_span(start, end)` projects a
+nonempty normalized interval to an original zero-based, end-exclusive code-point
+span; it rejects out-of-bounds indices and cuts inside a normalization unit. This
+prevents adjacent projected tokens from overlapping or dropping combining marks.
+CRLF maps to both original characters. Removed BOMs are outside projected text.
+
+`normalize_form()` applies the same character rules to a nonempty gold/token
+form, preserving a leading BOM because a form is not a file; gold boundaries and
+original strings remain intact. `normalize_forms()` preserves sequence order and
+length. The old `crf.features.surface.normalize_form` import remains a compatible
+re-export. Feature casing uses these case-preserving forms; `lexical_form()` then
+lowercases a normalized form and applies NFC again, without case folding.
+
+Unicode `Cf` formatting characters (including soft hyphens, zero-width characters
+and embedded BOMs) remain present except the permitted file-start BOM removal.
+Text results record every occurrence with its original offset and removal flag;
+raw-text and form normalization emit a summary through module logging when such
+characters occur. Combining stress marks remain present under NFC. Empty raw
+text is valid; empty token forms, invalid Unicode scalar text, boolean/noninteger/
+negative offsets and unsupported version values fail explicitly. No truncation, resource
+filter, filesystem operation or corpus statistics are introduced here.
+
+Gold conversion revalidates source/target/configuration consistency and explicit
+test-label authorization through `parse_sentence_record()`, retains unavailable
+gold-word spans as null, and leaves original comments/reconstruction metadata on
+the parser output. Dataset validation rejects normalized forms inconsistent with
+original forms for both gold and pseudo records. Wire formats remain version 1;
+previously accepted incorrect normalization now fails. Later contamination,
+literature and inference stages must use this normalizer and preserve its offsets;
+this task does not claim full tokenizer compatibility or corpus readiness.
 
 2. **Feature Dictionary Contract:**
 

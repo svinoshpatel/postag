@@ -6,7 +6,7 @@ See [AGENTS.md](AGENTS.md) for operating procedures and [docs/ARCH.md](docs/ARCH
 
 Implement a reproducible Ukrainian CRF self-training pipeline with isolated development and final evaluation, usable raw-text inference, and validated run artifacts. Preserve the approved experiment design and original datasets.
 
-Milestone 1 is implemented: the locked CPython 3.14 environment and installable `src/crf/` foundations replace the incompatible `postag/` experiments. Milestone 2 is implemented: strict configuration, typed records and identities, safe artifact publication, logging, and resource monitoring are verified. Later milestones remain unchecked. The tokenizer backend and surface features do not establish a complete preprocessing or training pipeline.
+Milestone 1 is implemented: the locked CPython 3.14 environment and installable `src/crf/` foundations replace the incompatible `postag/` experiments. Milestone 2 is implemented: strict configuration, typed records and identities, safe artifact publication, logging, and resource monitoring are verified. Milestone 3 gold parsing, shared target mapping and aligned normalization are implemented; feature-contract completion remains pending. Later milestones remain unchecked. The tokenizer backend and surface features do not establish a complete preprocessing or training pipeline.
 
 Gold-corpus availability, release identity, and compatibility checks are pending. Small deterministic fixtures support implementation and offline verification without production data. Full corpus runs have a separate readiness gate below; missing inputs must not be replaced with another split or fabricated data. No sprint duration or delivery estimate is assumed.
 
@@ -109,7 +109,7 @@ Prerequisites: milestones 1–2. Architecture: [Gold CoNLL-U Input Contract](doc
 
 - [x] Implement the streaming CoNLL-U loader and separate label-free audit interface. Acceptance: supplied sentence order and integer-word boundaries are preserved; multiword/empty-node rows, malformed records, final delimiters, provenance, and diagnostics follow the parser contract. Verified with 59 offline parser tests; full checks retain only the documented, unrelated `scripts/fetch_dictionary.py` lint/format failures.
 - [x] Implement optional service-tag mapping. Acceptance: original files and labels remain intact; source labels are validated first; all stages use the same configured target inventory; invalid mappings fail. Shared API verified across existing configuration/parser/record stages with 89 new offline tests; future stages must consume that API. Full checks retain only the documented unrelated lint/format failures.
-- [ ] Implement the shared versioned normalizer with source alignment. Acceptance: apostrophes, Unicode normalization, casing, whitespace, and Cyrillic preservation match the architecture, with original forms retained.
+- [x] Implement the shared versioned normalizer with source alignment. Acceptance: apostrophes, Unicode normalization, casing, whitespace, and Cyrillic preservation match the architecture, with original forms retained. Verified with 73 new normalization/record tests; full checks retain only the documented unrelated lint/format failures.
 - [ ] Implement the feature dictionary schema and sentence-bounded context extraction. Acceptance: feature names/types, affix lengths, casing/shape flags, boundary flags, unseen forms, and annotation exclusion match the specification.
 
 #### Milestone 3, task 1 execution steps (2026-10-28)
@@ -127,7 +127,7 @@ Prerequisites: milestones 1–2. Architecture: [Gold CoNLL-U Input Contract](doc
 
 Milestone 3 task 1 verification (2026-10-28): all 59 new parser tests pass; the full suite passes 333 tests and strict mypy passes all 16 core source files. Changed-file Ruff lint and formatting pass separately. Repository-wide lint/format still fail only on unchanged `scripts/fetch_dictionary.py` (I001 and formatting), reproduced before implementation and after the final code changes; the permitted pre-existing-failure exception applies. No checks were weakened. `git diff --check` passes. Tests cover exact provenance, label-free poisoned-annotation audits, explicit test-label access, reconstruction/MWT/empty nodes, strict diagnostics, streaming, source changes and gold sentences exceeding raw-text limits. Production corpus files and generated artifacts were untouched, and the pre-existing `AD main.py` state was preserved.
 
-This completes the parser interface only: normalized dataset assembly, broader target-mapping integration, contamination controls and real-corpus readiness remain later tasks. Source validation requires iterator exhaustion; a late failure invalidates the source even if prior sentences were yielded. Later pipeline consumers must integrate memory monitoring and atomic artifact publication.
+At task 1 completion, normalized dataset assembly, broader target-mapping integration, contamination controls and real-corpus readiness remained later tasks. Source validation requires iterator exhaustion; a late failure invalidates the source even if prior sentences were yielded. Later pipeline consumers must integrate memory monitoring and atomic artifact publication.
 
 #### Milestone 3, task 2 execution steps (2026-10-28)
 
@@ -144,7 +144,24 @@ This completes the parser interface only: normalized dataset assembly, broader t
 
 Milestone 3 task 2 verification (2026-10-28): 89 new offline label-space tests pass, and the full suite passes 422 tests. Strict mypy passes all 17 core source files; changed-file Ruff lint and formatting pass separately. Repository-wide lint/format fail only on unchanged `scripts/fetch_dictionary.py` (I001 and formatting), reproduced before and after implementation; the permitted pre-existing-failure exception applies. `git diff --check` passes. No checks were weakened. Fixtures verify every UD tag, 17/14-class inventories, exact custom Unicode targets, mapping preservation/config identity, source/target validation order, immutable records and JSON round trips across train/validation/explicit final-test loading, unmapped pseudo rejection without confidence changes, and label-free audit independence. Production inputs/generated artifacts and the pre-existing `AD main.py` state remain untouched.
 
-Mapping is now centralized for all implemented consumers, with compatible configuration and dataset wire formats. Future model/metric/prediction stages must use the shared label space and their prescribed inventory metadata; those stages, normalized dataset assembly and production-corpus readiness remain unimplemented. No post-hoc mapped model/confidence conversion is provided or claimed.
+At task 2 completion, mapping was centralized for all implemented consumers, with compatible configuration and dataset wire formats. Future model/metric/prediction stages must use the shared label space and their prescribed inventory metadata. At that point, those stages, normalized dataset assembly and production-corpus readiness remained unimplemented. No post-hoc mapped model/confidence conversion is provided or claimed.
+
+#### Milestone 3, task 3 execution steps (2026-10-28)
+
+1. Specify versioned text/form normalization, conservative source-span projection and formatting diagnostics, including the boundary with future paragraph streaming/tokenization.
+2. Implement the shared normalizer; integrate existing features, dataset form validation and gold-record conversion without changing originals or artifact schemas.
+3. Record specification/boundary review before tests; verify transformations, Unicode alignment/failures, source preservation and existing consumers with offline fixtures, then run all four required checks.
+
+#### Milestone 3, task 3 specification review before tests
+
+- Raw text normalizes a single file-start BOM, CRLF/CR, NFC, apostrophes and NBSP variants in the required order, preserving case, line/paragraph boundaries and other characters. Form normalization preserves leading BOMs and supplied token boundaries; lexical lowercasing is separate and NFC is applied again afterward. Version/Unicode metadata and strict scalar/type validation are explicit.
+- Immutable alignment records assign each output character its entire original NFC-unit interval, including interacting starter compositions, canonical reordering and expansions. Absolute offsets count original decoded code points, CRLF spans both characters, and projection rejects partial-unit/empty/reversed/out-of-bounds spans. Complete-unit projection must recover an original slice that normalizes to exactly the selected output. No chunk-based/file streaming or raw filtering is introduced.
+- Formatting characters remain visible in normalized text except one permitted raw file-start BOM. Structured observations retain every original offset/removal flag, with module-level logging summaries. Stress marks, soft hyphens, zero-width characters, Cyrillic distinctions and Latin lookalikes remain preserved under NFC.
+- Features re-export/use the shared form normalizer; record validation now checks exact normalized-form semantics. Gold conversion preserves originals, labels, provenance, null word spans and separate parser metadata; mapped targets are revalidated and test records retain explicit opt-in. Existing 224 affected tests and strict types pass. New deterministic tests will derive outputs/spans independently, exercise multiple scripts, projection boundaries, failure cases, log diagnostics, record conversion/round trips and source immutability.
+
+Milestone 3 task 3 verification (2026-10-28): 73 new offline normalization/record cases pass; the full suite passes 495 tests and strict mypy passes all 18 core source files. Changed-file Ruff lint and formatting pass separately. Repository-wide lint/format retain only unchanged `scripts/fetch_dictionary.py` (I001 and formatting), reproduced before and after implementation; the permitted pre-existing-failure exception applies. `git diff --check` passes. No checks were weakened. Coverage includes exact raw offsets/BOM/CRLF, NFC composition/expansion/reordering across scripts, 80 bounded fixed-seed Unicode reference cases, complete-unit projection and ambiguous cuts, Cyrillic/case/stress/format-character preservation and diagnostics, invalid text/version/span inputs, mapped gold-record conversion for all splits with explicit test access, source immutability, and gold/pseudo normalized-form rejection.
+
+Normalization version 1 and Unicode-version metadata are available through immutable text results. Conservative alignment rejects partial NFC-unit spans instead of inventing character offsets. The raw-text/UD streaming adapter, contamination fingerprints/exclusions, production tokenizer compatibility, model stages and corpus readiness remain later work. Existing low-level tokenizer/preview behavior is preserved. Original datasets and existing generated artifacts were untouched; the unrelated `AD main.py` state remains unchanged.
 
 ### 4. Implement Literature Streaming and Contamination Controls
 
@@ -212,8 +229,8 @@ Update this table with the actual command result, date, and relevant evidence du
 |---|---|---|
 | Lint | `uv run ruff check .` | Failed: unchanged `scripts/fetch_dictionary.py` I001; changed-code lint passed |
 | Formatting | `uv run ruff format --check .` | Failed: unchanged `scripts/fetch_dictionary.py` requires formatting; changed-code formatting passed |
-| Types | `uv run mypy src/crf/` | Passed (2026-10-28): 17 source files |
-| Tests | `uv run pytest tests/ -v` | Passed (2026-10-28): 422 tests, including 89 shared label-space tests, 59 gold parser/audit tests and two offline integration tests |
+| Types | `uv run mypy src/crf/` | Passed (2026-10-28): 18 source files |
+| Tests | `uv run pytest tests/ -v` | Passed (2026-10-28): 495 tests, including 73 normalization/record cases, 89 shared label-space tests, 59 gold parser/audit tests and two offline integration tests |
 
 ## Open Dependencies and Blockers
 
@@ -223,4 +240,4 @@ Update this table with the actual command result, date, and relevant evidence du
 - Unrelated pre-existing failures: `scripts/fetch_dictionary.py` fails Ruff import ordering and formatting, with the same findings in baseline and final checks. It remains unchanged; core type/tests and all changed-code Ruff checks pass. No checks were weakened.
 - The pre-existing `AD main.py` index/worktree state was left untouched.
 - Production corpus availability and tokenizer compatibility are unverified; the corpus gate cannot be completed until they are established.
-- The production raw-text adapter is still incomplete: upstream standalone format-character omissions need handling, UD token boundaries require adaptation, and normalizer source alignment is pending. Corpus readiness, full model training, and final evaluation remain unperformed.
+- The production raw-text adapter is still incomplete: upstream standalone format-character omissions need handling, UD token boundaries require adaptation, and the shared aligned normalizer needs integration with bounded paragraph streaming. Corpus readiness, full model training, and final evaluation remain unperformed.

@@ -12,6 +12,7 @@ from crf.data.identity import (
     sentence_id,
 )
 from crf.data.labels import TagMappingError
+from crf.data.normalization import NormalizationError, normalize_forms
 from crf.utils.config import ConfigError, PipelineConfig
 from crf.utils.serialization import (
     ValidationError,
@@ -172,6 +173,16 @@ def parse_sentence_record(
     count = len(ids)
     original = _strings(raw["original_forms"], "original_forms", count)
     normalized = _strings(raw["normalized_forms"], "normalized_forms", count)
+    try:
+        expected_forms = normalize_forms(
+            original, version=config.preprocessing.normalizer_version
+        )
+    except NormalizationError as exc:
+        raise ValidationError(str(exc)) from exc
+    if normalized != expected_forms:
+        raise ValidationError(
+            "normalized_forms: disagree with shared normalization of original_forms"
+        )
     labels = _strings(raw["target_labels"], "target_labels", count)
     try:
         label_space = config.label_space

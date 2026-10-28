@@ -3,24 +3,16 @@
 import unicodedata
 from collections.abc import Sequence
 
+from crf.data.normalization import lexical_form
+from crf.data.normalization import normalize_form as normalize_form
+
 type FeatureValue = str | bool | float
 type FeatureDict = dict[str, FeatureValue]
-
-_APOSTROPHES = str.maketrans(
-    {"’": "'", "`": "'", "ʼ": "'", "\u00a0": " ", "\u202f": " "}
-)
-
-
-def normalize_form(form: str) -> str:
-    """Normalize an individual gold/feature form without changing boundaries."""
-    if not isinstance(form, str) or not form:
-        raise ValueError("token forms must be nonempty strings")
-    return unicodedata.normalize("NFC", form).translate(_APOSTROPHES)
 
 
 def _shape(form: str) -> FeatureDict:
     return {
-        "word.lower": unicodedata.normalize("NFC", form.lower()),
+        "word.lower": lexical_form(form),
         "is_title": form.istitle(),
         "is_uppercase": form.isupper(),
         "is_lowercase": form.islower(),
@@ -39,7 +31,7 @@ def sentence_features(forms: Sequence[str]) -> list[FeatureDict]:
     result: list[FeatureDict] = []
     for index, form in enumerate(normalized):
         features: FeatureDict = {"bias": 1.0, **shapes[index]}
-        lexical = unicodedata.normalize("NFC", form.lower())
+        lexical = lexical_form(form)
         for kind, maximum in (("prefix", 4), ("suffix", 5)):
             for length in range(1, min(maximum, len(lexical)) + 1):
                 features[f"{kind}.{length}"] = (
