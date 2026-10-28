@@ -198,6 +198,24 @@ The CRF pipeline uses the `src/` layout with its core package at `src/crf/`, imp
 
 The existing exploratory files under `postag/` are no longer required interfaces and may be moved or replaced during implementation. This migration establishes one core package that follows the contracts in this document rather than preserving incompatible legacy behavior. Update affected callers and tests with the migration; legacy feature representations and model artifacts are not interchangeable with the new schema without explicit verification. Existing files may remain while the migration is incomplete, but the new pipeline must use `crf`. The blueprint specifies the target layout, not a claim that migration has already occurred.
 
+### Milestone 1 Migration Decision (2026-10-28)
+
+The previous `postag` modules implement corpus-frequency features, a ±1 context window,
+SVD/clustering, and whole-file spaCy tokenization. These conflict with the prescribed
+feature schema and bounded preprocessing. Replace them with installable `crf`
+foundations rather than retaining a second production interface. The sparse vector/SVD
+experiment is retired because CRFsuite consumes feature dictionaries directly. Old
+`postag` imports, feature keys, CLI switches, and exploratory serialized models are
+not supported by the new package.
+
+Milestone 1 establishes the surface-form feature extractor and a low-level tokenizer
+backend operating on a caller-supplied paragraph. The backend preserves original slices
+using upstream span offsets and uses the non-legacy APIs without spaCy. It is not yet
+the production raw-text/UD adapter: normalization with source alignment, UD boundary
+adaptation, bounded file streaming, exclusions, and provenance remain milestones 3–4.
+The preview entry point accepts text only and writes JSON to stdout; it produces no
+training artifacts and is not a substitute for the future pipeline or prediction CLIs.
+
 ## 3. Artifact & Run Contracts
 
 ### Run-Specific Locations
@@ -434,6 +452,21 @@ All run metadata is generated automatically; changing the literature corpus does
 ## 4. Environment & Verification Contract
 
 Declare direct runtime dependencies and development tools in `pyproject.toml`; reproduce the environment with `uv.lock` in the project-local environment. Include Ruff, mypy, and pytest as project development tools. Keep Ruff configuration in `pyproject.toml`, target Python 3.14, and document material lint-rule choices. See the [uv project structure reference](https://docs.astral.sh/uv/concepts/projects/layout/).
+
+Milestone 1 established CPython 3.14.6 on macOS arm64 with `tokenize-uk==2.0.0`
+(without its spaCy extra), `python-crfsuite==0.9.12`, and `sklearn-crfsuite==0.5.0`.
+The complete resolved environment is in `uv.lock`; reproduce it with
+`uv sync --locked`. Dependency imports, a tiny CRF fit/marginal/persistence
+round trip, and an isolated installed-package import establish compatibility
+for these foundations; they do not establish real-corpus or cross-platform results.
+
+Ruff enables essential syntax/error checks (`E4`, `E7`, `E9`, `F`), import ordering
+(`I`), Python modernization (`UP`), and common correctness pitfalls (`B`).
+Formatting remains a separate check. Mypy uses strict mode for `src/crf/`.
+Pytest uses importlib mode and the installed package, with no `sys.path` injection;
+integration tests carry an explicit marker and document their dependencies.
+`src/crf/py.typed` marks the installed package as typed. The Hatch build backend
+packages only `src/crf/`.
 
 The selected runtime is a target until the environment has been established and compatibility verified. Do not claim the existing environment has been upgraded merely because this specification has changed. Seeds control applicable random operations but do not guarantee identical floating-point results across platforms or dependency versions; record the effective environment and any observed nondeterminism.
 

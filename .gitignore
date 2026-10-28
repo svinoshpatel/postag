@@ -2,6 +2,29 @@
 __pycache__/
 *.py[cod]
 .DS_Store
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+*.egg-info/
+/build/
+/dist/
 
 /data/tokenized/
 /literature
+
+# Derived artifacts; immutable data/raw inputs remain visible to Git.
+/data/interim/
+/data/processed/
+/models/
+/reports/
+*.joblib
+*.pkl
+*.pickle
+*.crfsuite
+*.pt
+*.pth
+*.onnx
+*.safetensors
+
+# Only small, intentional fixtures may be versioned as serialized test data.
+!tests/fixtures/**

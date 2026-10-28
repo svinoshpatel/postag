@@ -6,7 +6,7 @@ See [AGENTS.md](AGENTS.md) for operating procedures and [docs/ARCH.md](docs/ARCH
 
 Implement a reproducible Ukrainian CRF self-training pipeline with isolated development and final evaluation, usable raw-text inference, and validated run artifacts. Preserve the approved experiment design and original datasets.
 
-Architecture refinement is complete. Implementation status has not been established by this planning change; existing exploratory code is not evidence that the new contracts are satisfied. The repository still contains `postag/`, and the prescribed project configuration and `src/crf/` migration remain to be established.
+Milestone 1 is implemented: the locked CPython 3.14 environment and installable `src/crf/` foundations replace the incompatible `postag/` experiments. Later milestones remain unchecked; the tokenizer backend and surface features do not establish a complete preprocessing or training pipeline.
 
 Gold-corpus availability, release identity, and compatibility checks are pending. Small deterministic fixtures support implementation and offline verification without production data. Full corpus runs have a separate readiness gate below; missing inputs must not be replaced with another split or fabricated data. No sprint duration or delivery estimate is assumed.
 
@@ -18,9 +18,25 @@ Work in coherent increments. Before writing new tests for each increment, record
 
 Architecture: [Core Package and Migration Boundary](docs/ARCH.md#core-package-and-migration-boundary) and [Environment & Verification Contract](docs/ARCH.md).
 
-- [ ] Establish the prescribed CPython/`uv` environment, dependency declarations, lockfile, interpreter selection, and Ruff/mypy/pytest configuration. Acceptance: dependency compatibility is demonstrated and all four verification tools are runnable from the repository root.
-- [ ] Create installable `src/crf/` packaging and migrate or replace relevant `postag/` logic and affected tests/callers. Acceptance: pipeline imports use `crf`; reusable logic resides in the core, with no dependency on importing `src` as a package or preserving incompatible exploratory behavior.
-- [ ] Add required generated-artifact exclusions before producing datasets, models, or reports. Acceptance: immutable inputs and existing artifacts are protected; intentional test fixtures remain identifiable.
+- [x] Establish the prescribed CPython/`uv` environment, dependency declarations, lockfile, interpreter selection, and Ruff/mypy/pytest configuration. Acceptance: dependency compatibility is demonstrated and all four verification tools are runnable from the repository root.
+- [x] Create installable `src/crf/` packaging and migrate or replace relevant `postag/` logic and affected tests/callers. Acceptance: pipeline imports use `crf`; reusable logic resides in the core, with no dependency on importing `src` as a package or preserving incompatible exploratory behavior.
+- [x] Add required generated-artifact exclusions before producing datasets, models, or reports. Acceptance: immutable inputs and existing artifacts are protected; intentional test fixtures remain identifiable.
+
+Milestone 1 verification exception: repository-wide Ruff lint and formatting fail only on the unchanged `scripts/fetch_dictionary.py` (import ordering and formatting), reproduced before migration. All changed Python files pass both checks; strict core types and all 20 tests pass. See the verification record below.
+
+#### Milestone 1 execution steps (2026-10-28)
+
+1. Establish CPython 3.14, declare runtime/dev dependencies, lock and sync with `uv`, and verify tool availability before migrating code.
+2. Replace incompatible exploratory features and the spaCy tokenizer with typed `crf` foundations; update callers, fixtures, and usage documentation. Review requirements/boundaries before writing replacement tests and run focused checks.
+3. Exclude generated artifacts, verify ignore rules without creating artifacts, and run all four required checks. Record environment and migration limitations.
+
+#### Milestone 1 specification review before replacement tests
+
+- Packaging/runtime: Hatch installs only `src/crf`; `.python-version` selects CPython 3.14.6, and the lock resolves runtime dependencies and all three check tools. All imports and tool availability were verified through `uv`; initial core mypy passed.
+- Migration: no new core imports `postag` or `src`. Retired TF/SVD and spaCy whole-file behavior is deliberately incompatible, as documented before implementation in the architecture. Features accept surface forms only, emit finite typed values, use ±2 sentence context, omit unavailable short affixes, and retain unseen strings without learned statistics.
+- Text backend: immutable paragraph-relative spans recover original apostrophes from offsets. Empty/whitespace inputs yield no sentences. Full normalization/alignment, format-character handling, UD adaptation and bounded file reading remain later tasks; this preview cannot produce pipeline artifacts.
+- Replacement tests will derive feature values and boundaries from the architecture, check invalid/annotated inputs, original code-point slices and immutable records, and exercise installed-package imports and compiled CRFsuite fitting/serialization with tiny deterministic fixtures. The latter checks dependency compatibility, not experiment quality.
+- Baseline checks found legacy lint/format failures, including the unrelated `scripts/fetch_dictionary.py`. Preserve that file and record its failure if it remains after migration; do not weaken repository checks.
 
 ### 2. Implement Shared Configuration, Artifact, and Resource Foundations
 
@@ -97,19 +113,23 @@ These items are separate from fixture-based implementation acceptance. Do not ma
 
 ## Verification Record
 
-For the current plan refinement, architecture references, milestone ordering, acceptance criteria, and Markdown were checked by inspection. No executable behavior changed; implementation checks and corpus runs were not performed.
+Milestone 1 verification performed on 2026-10-28 with CPython 3.14.6 on macOS arm64. Architecture references, migrated API documentation, and command examples were inspected. No production corpus processing or experiment was performed.
 
 Update this table with the actual command result, date, and relevant evidence during implementation:
 
 | Check | Command | Current result |
 |---|---|---|
-| Lint | `uv run ruff check .` | Not run for this documentation-only change |
-| Formatting | `uv run ruff format --check .` | Not run for this documentation-only change |
-| Types | `uv run mypy src/crf/` | Not run for this documentation-only change |
-| Tests | `uv run pytest tests/ -v` | Not run for this documentation-only change |
+| Lint | `uv run ruff check .` | Failed: unchanged `scripts/fetch_dictionary.py` I001; changed-code lint passed |
+| Formatting | `uv run ruff format --check .` | Failed: unchanged `scripts/fetch_dictionary.py` requires formatting; changed-code formatting passed |
+| Types | `uv run mypy src/crf/` | Passed: 7 source files |
+| Tests | `uv run pytest tests/ -v` | Passed: 20 tests, including one offline integration test |
 
 ## Open Dependencies and Blockers
 
-- Environment/dependency compatibility and the package migration require implementation verification.
+- `uv lock --check` and `uv pip check` passed; all runtime and verification-tool imports succeeded. The offline integration fixture verified CRFsuite fitting/marginals and joblib prediction/confidence equivalence after loading. No cross-platform bitwise reproducibility is claimed.
+- Editable installation imports work from outside the repository with isolated Python (`-I`). Wheel inspection verifies `crf` and `py.typed` without legacy/data packages. Source distributions explicitly include only code, tests, and documentation, excluding raw corpus files.
+- Ignore-rule checks passed for interim/processed datasets, model bundles, reports, distribution builds, and weights. Raw gold/literature inputs, intentional fixtures, and `uv.lock` remain visible. Existing raw files and generated datasets/models/reports were not overwritten.
+- Unrelated pre-existing failures: `scripts/fetch_dictionary.py` fails Ruff import ordering and formatting, with the same findings in baseline and final checks. It remains unchanged; core type/tests and all changed-code Ruff checks pass. No checks were weakened.
+- The pre-existing `AD main.py` index/worktree state was left untouched.
 - Production corpus availability and tokenizer compatibility are unverified; the corpus gate cannot be completed until they are established.
-- No implementation-check, training-run, or final-evaluation result is claimed by this plan update. Record discovered blockers, related failures, and their resolution here as work proceeds.
+- The production raw-text adapter is still incomplete: upstream standalone format-character omissions need handling, UD token boundaries require adaptation, and normalizer source alignment is pending. Corpus readiness, full model training, and final evaluation remain unperformed.
