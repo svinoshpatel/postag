@@ -28,6 +28,48 @@ The project uses two main data sources:
 * **Loader output:** Emit one immutable sentence record containing its split, source path, sentence ordinal, original integer token IDs, original forms, aligned original UPOS labels, and aligned target labels. The target labels equal the original UPOS labels unless tag mapping is enabled below. Each included token must have exactly one original UPOS label and one target label. Retain `sent_id`, sentence text, and reconstruction metadata separately for provenance and auditing. Feature extraction receives surface forms without gold annotations; the contamination-audit interface exposes text and identifiers without labels.
 * **Failure behavior:** Fail on malformed gold records, sentences with no integer-ID words, or a missing final sentence delimiter. Report the source path, line number, and reason; never silently skip examples or repair original files. These are POS-loader checks, not a claim of complete dependency-tree validation.
 
+#### Gold parser implementation boundary (M3 task 1, 2026-10-28)
+
+`crf.data.conllu.iter_gold_sentences()` emits immutable `GoldSentence` records
+with original UPOS and target labels using the configuration's already-validated
+mapping (identical to UPOS by default). These are parser outputs,
+not normalized `SentenceRecord` artifacts. The shared mapping API below now
+verifies target-space consistency; the normalization task will assemble normalized artifacts;
+this parser deliberately has no feature-form interface. Test-label parsing
+requires `final_evaluation=True` before source access. Both parser and audit take
+a configured `InputIdentity` and repository root, verify its current opaque-byte
+checksum before reading, and check streamed bytes again at EOF. Consumers must
+exhaust iterators before treating a source as successfully validated; earlier
+sentences can be yielded before a later malformed sentence is discovered.
+
+`iter_gold_audit()` has a distinct label-free return type. It interprets only
+IDs, FORM, selected surface/document comments and spacing metadata; the seven
+annotation columns are checked only for framing/nonemptiness, never parsed or
+validated as annotations. It does not call the labeled parser. Labeled outputs
+add complete original comments separately; audit outputs cannot expose them.
+
+Strict tab/field and delimiter checks precede `conllu`'s structural ID/comment
+helpers because its general parser permits missing fields and EOF delimiters.
+Word IDs must be consecutive; range rows must precede their covered words,
+span at least two words, and not overlap or extend beyond the sentence. Empty
+nodes have structural, unique decimal IDs and an already observed word anchor
+(or anchor zero); dependency-tree validation remains outside this POS loader.
+LF and CRLF input are accepted, a file-start BOM and malformed UTF-8 are rejected, and
+diagnostics identify source path and physical line. Extra blank lines are ignored;
+a comments-only sentence and an unterminated final sentence are errors.
+
+Surface metadata retains word/range/empty-node IDs and original forms, plus
+`SpaceAfter`, `SpacesAfter`, and `SpacesBefore` values only. Reconstruction emits
+MWT surface forms once in place of their component words and ignores empty
+nodes. It uses escaped UD whitespace metadata when supplied, otherwise
+`SpaceAfter=No` or a default inter-token space, omitting a default trailing space.
+An explicit `# text = ...` value takes precedence and is marked original;
+otherwise text is marked reconstructed. Gold-word source spans remain unavailable
+(`null` when later converted to dataset records). Document/paragraph markers
+persist across sentences; no inferred grouping from sent_id is introduced.
+No raw-sentence size/token filters apply to gold. Later orchestration must apply
+the existing memory monitor and publish-once artifact lifecycle.
+
 ### Optional Target Tag Mapping
 
 * **Default and configuration:** Tag mapping is disabled by default (`tag_mapping: {}`), preserving the 17-tag UD target inventory. To consolidate service tags, configure all four source tags to the same target name, for example:
@@ -43,6 +85,35 @@ The project uses two main data sources:
 * **Mapping semantics:** Apply the configured mapping to validated original UPOS labels in memory or in separate derived artifacts only. For the example above, `ADP`, `CCONJ`, `SCONJ`, and `PART` become `FUNC`; all other labels remain unchanged. Original gold files on disk and the original UPOS labels retained by the loader must remain untouched. Reject mappings that omit any of the four service tags, include other source tags, or assign different consolidated targets. The consolidated target name must be a nonempty string without whitespace and must not collide with an original UD tag.
 * **Consistent target space:** Fix and record the mapping before model selection. Use it identically for `train_gold` training targets and `val_gold`/`test_gold` evaluation targets. Train both `CRF-Gate` and `CRF-Final` directly in the resulting target space; gate predictions, marginals, and pseudo-labels use that same space. Mapping changes require a new experiment, retraining both models, and regenerating pseudo-labels. Do not obtain mapped confidence scores by merely renaming labels or combining marginals from an unmapped gate.
 * **Reporting and compatibility:** Record the mapping and resulting target inventory with configurations, derived datasets, models, and evaluation reports. Report per-tag and aggregate metrics in that inventory. The example yields 14 target classes and cannot distinguish the four original service tags. Compare gate and final metrics only under the same mapping and identify consolidated-task results separately from the original 17-tag UPOS results. `FUNC` is a custom target label, not a valid standard UD UPOS value; do not write mapped labels into original gold files or present mapped output as standard UD UPOS annotation.
+
+#### Shared label-space implementation (M3 task 2, 2026-10-28)
+
+`crf.data.labels.TagMapping` owns the fixed source inventory, service-tag rule,
+immutable canonical mapping entries, source-label validation/application, target
+validation and alphabetical target inventory. Configuration retains its existing
+tuple representation and serialized `tag_mapping` object; `PipelineConfig.label_space`
+and `PipelineConfig.target_inventory` expose the shared validated API. The existing
+`crf.utils.config.UPOS` and `SERVICE_TAGS` imports remain compatible re-exports.
+Invalid direct tuple construction (including duplicate sources) fails rather than
+silently losing entries through `dict()`. Target names retain exact case and Unicode;
+they must be valid UTF-8 strings without whitespace or NUL, and cannot be UD tags.
+
+Configuration, labeled gold parsing and gold/pseudo dataset validation all use
+this API. Gold labels are validated in the original UPOS space before mapping;
+pseudo targets are validated directly in the resulting inventory and never remapped.
+Neither original forms/labels nor source files change. Audit reading does not
+access the label-space API or interpret labels. Label-space/configuration errors
+remain `ConfigError` at configuration boundaries and `ValidationError` at dataset
+boundaries; gold-row source-label failures retain source path/line diagnostics.
+
+Mapping is preserved by existing effective-config serialization/hashing and target
+arrays by the dataset schema; no wire-format/schema version change is required.
+The inventory is derived from configuration rather than added as an unknown
+configuration/dataset field. Future models, metrics and prediction stages must
+consume this same API and persist/check their already-prescribed inventory fields.
+This task does not implement those stages or normalize/assemble gold dataset
+artifacts; mapped confidence aggregation or post-hoc prediction relabeling is not
+provided.
 
 ### Core Methodology: Two-Stage Self-Training Workflow
 1. **Stage 1 — Baseline (`CRF-Gate`):**

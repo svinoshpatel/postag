@@ -11,7 +11,8 @@ from crf.data.identity import (
     sampling_priority,
     sentence_id,
 )
-from crf.utils.config import UPOS, PipelineConfig
+from crf.data.labels import TagMappingError
+from crf.utils.config import ConfigError, PipelineConfig
 from crf.utils.serialization import (
     ValidationError,
     array,
@@ -172,10 +173,10 @@ def parse_sentence_record(
     original = _strings(raw["original_forms"], "original_forms", count)
     normalized = _strings(raw["normalized_forms"], "normalized_forms", count)
     labels = _strings(raw["target_labels"], "target_labels", count)
-    mapping = dict(config.tag_mapping)
-    inventory = {mapping.get(label, label) for label in UPOS}
-    if not set(labels) <= inventory:
-        raise ValidationError("target_labels: outside configured target inventory")
+    try:
+        label_space = config.label_space
+    except ConfigError as exc:
+        raise ValidationError(str(exc)) from exc
     spans = _spans(raw["token_spans"], count, decoded_source_length)
     surface = text_value(raw["surface_text"], "surface_text")
     origin = text_value(raw["surface_text_origin"], "surface_text_origin")
@@ -191,9 +192,11 @@ def parse_sentence_record(
                 "gold: requires gold source, null paragraph_ordinal and null pseudo"
             )
         upos = _strings(raw["original_upos"], "original_upos", count)
-        if not set(upos) <= UPOS:
-            raise ValidationError("original_upos: outside fixed UD inventory")
-        if tuple(mapping.get(label, label) for label in upos) != labels:
+        try:
+            mapped = label_space.map_upos(upos)
+        except TagMappingError as exc:
+            raise ValidationError(str(exc)) from exc
+        if mapped != labels:
             raise ValidationError("target_labels: disagree with mapped original_upos")
         paragraph, pseudo = None, None
     else:
@@ -208,6 +211,10 @@ def parse_sentence_record(
         paragraph = integer(raw["paragraph_ordinal"], "paragraph_ordinal", 1)
         upos = None
         pseudo = _pseudo(raw["pseudo"], count, config.seed)
+    try:
+        label_space.validate_targets(labels)
+    except TagMappingError as exc:
+        raise ValidationError(str(exc)) from exc
     return SentenceRecord(
         1,
         cast(Literal["gold", "pseudo"], kind),

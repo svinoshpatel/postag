@@ -107,10 +107,44 @@ Lifecycle limits: POSIX directory descriptors/no-follow traversal and hard-link 
 
 Prerequisites: milestones 1–2. Architecture: [Gold CoNLL-U Input Contract](docs/ARCH.md#gold-conll-u-input-contract), [Optional Target Tag Mapping](docs/ARCH.md#optional-target-tag-mapping), and [Ukrainian Language & NLP Feature Constraints](docs/ARCH.md).
 
-- [ ] Implement the streaming CoNLL-U loader and separate label-free audit interface. Acceptance: supplied sentence order and integer-word boundaries are preserved; multiword/empty-node rows, malformed records, final delimiters, provenance, and diagnostics follow the parser contract.
-- [ ] Implement optional service-tag mapping. Acceptance: original files and labels remain intact; source labels are validated first; all stages use the same configured target inventory; invalid mappings fail.
+- [x] Implement the streaming CoNLL-U loader and separate label-free audit interface. Acceptance: supplied sentence order and integer-word boundaries are preserved; multiword/empty-node rows, malformed records, final delimiters, provenance, and diagnostics follow the parser contract. Verified with 59 offline parser tests; full checks retain only the documented, unrelated `scripts/fetch_dictionary.py` lint/format failures.
+- [x] Implement optional service-tag mapping. Acceptance: original files and labels remain intact; source labels are validated first; all stages use the same configured target inventory; invalid mappings fail. Shared API verified across existing configuration/parser/record stages with 89 new offline tests; future stages must consume that API. Full checks retain only the documented unrelated lint/format failures.
 - [ ] Implement the shared versioned normalizer with source alignment. Acceptance: apostrophes, Unicode normalization, casing, whitespace, and Cyrillic preservation match the architecture, with original forms retained.
 - [ ] Implement the feature dictionary schema and sentence-bounded context extraction. Acceptance: feature names/types, affix lengths, casing/shape flags, boundary flags, unseen forms, and annotation exclusion match the specification.
+
+#### Milestone 3, task 1 execution steps (2026-10-28)
+
+1. Define immutable parsed-gold and label-free audit interfaces, reconstruction rules, and the boundary with later mapping/normalization.
+2. Implement strict incremental CoNLL-U framing, word/auxiliary-row validation, provenance, and surface reconstruction without interpreting held-out annotations in audits.
+3. Record specification review before tests; verify deterministic normal/boundary/failure fixtures and all four required checks. Preserve existing Git state and production inputs.
+
+#### Milestone 3, task 1 specification review before tests
+
+- Incremental binary-line framing decodes strict UTF-8 with physical-line diagnostics, accepts LF/CRLF, requires final blank delimiters, and rejects comments after rows, malformed fields, BOMs, and sentences without words. No gold size/token limits or silent repairs are applied.
+- Immutable parser outputs preserve consecutive integer IDs, forms (including literal underscores), original UPOS, comments, sentence order, source identity and IDs. Targets use the already-validated configuration mapping after source UPOS validation. Structural range/decimal rows stay out of labels and word counts; reconstruction retains MWT surfaces and spacing while excluding empty nodes. Missing range members, overlap, duplicates, invalid IDs/UPOS, and observed source changes fail.
+- Audits interpret only the whitelisted surface/document metadata, IDs, FORM and spacing; annotation fields remain opaque and never enter returned objects. Test-label loading rejects absent or nonboolean evaluation opt-in before reading sources. Features/normalization, mapped artifact construction, contamination filtering and full pipeline orchestration remain subsequent tasks.
+- Tests will independently check provenance hashes, original/reconstructed surfaces, document continuity, annotation-poisoned audits, strict failure path/line diagnostics, incremental consumption, unchanged source bytes, and large intact gold sentences using only temporary offline fixtures.
+
+Milestone 3 task 1 verification (2026-10-28): all 59 new parser tests pass; the full suite passes 333 tests and strict mypy passes all 16 core source files. Changed-file Ruff lint and formatting pass separately. Repository-wide lint/format still fail only on unchanged `scripts/fetch_dictionary.py` (I001 and formatting), reproduced before implementation and after the final code changes; the permitted pre-existing-failure exception applies. No checks were weakened. `git diff --check` passes. Tests cover exact provenance, label-free poisoned-annotation audits, explicit test-label access, reconstruction/MWT/empty nodes, strict diagnostics, streaming, source changes and gold sentences exceeding raw-text limits. Production corpus files and generated artifacts were untouched, and the pre-existing `AD main.py` state was preserved.
+
+This completes the parser interface only: normalized dataset assembly, broader target-mapping integration, contamination controls and real-corpus readiness remain later tasks. Source validation requires iterator exhaustion; a late failure invalidates the source even if prior sentences were yielded. Later pipeline consumers must integrate memory monitoring and atomic artifact publication.
+
+#### Milestone 3, task 2 execution steps (2026-10-28)
+
+1. Define one immutable label-space API and document integration/compatibility boundaries; preserve configuration and dataset wire formats.
+2. Centralize source UPOS validation, mapping validation/application and sorted target inventory; integrate configuration, gold parsing and gold/pseudo record validation.
+3. Record specification review before new tests; verify all splits, preservation, invalid mappings, target-space mismatches and serialization using offline fixtures, then run all four required checks.
+
+#### Milestone 3, task 2 specification review before tests
+
+- `TagMapping` validates immutable entries (including duplicate/malformed direct inputs), canonicalizes order, accepts only the complete four-service-tag consolidation or disabled mapping, and rejects invalid/colliding/non-UTF-8 targets. Mapping and target checks return immutable aligned tuples; inputs remain untouched. Inventories derive from all 17 source tags and are alphabetically sorted (17 default, 14 consolidated).
+- Configuration parsing/serialization, labeled loading and gold/pseudo record validation share the API; configuration constants remain compatible re-exports. Source UPOS validation precedes mapping and target comparisons. Pseudo labels are validated directly without renaming or confidence aggregation. Direct configuration misuse fails at label-space consumers too.
+- Audit reading remains independent of mapping and label interpretation. Train/validation records and explicitly authorized test records must agree on targets; mapping changes alter configuration identity and invalidate mismatched records. Existing schema fields/versions remain unchanged; normalized artifact assembly and future model/metric/inference integration remain with their owning tasks.
+- Existing 212 configuration/parser/record tests and strict core types pass after integration. New tests will independently specify fixed inventories and outputs; cover all tags/splits, invalid mappings/types/Unicode/duplicates, immutable preservation, poisoned audit inputs, JSON/config round trips and changed-mapping rejection using temporary fixtures only.
+
+Milestone 3 task 2 verification (2026-10-28): 89 new offline label-space tests pass, and the full suite passes 422 tests. Strict mypy passes all 17 core source files; changed-file Ruff lint and formatting pass separately. Repository-wide lint/format fail only on unchanged `scripts/fetch_dictionary.py` (I001 and formatting), reproduced before and after implementation; the permitted pre-existing-failure exception applies. `git diff --check` passes. No checks were weakened. Fixtures verify every UD tag, 17/14-class inventories, exact custom Unicode targets, mapping preservation/config identity, source/target validation order, immutable records and JSON round trips across train/validation/explicit final-test loading, unmapped pseudo rejection without confidence changes, and label-free audit independence. Production inputs/generated artifacts and the pre-existing `AD main.py` state remain untouched.
+
+Mapping is now centralized for all implemented consumers, with compatible configuration and dataset wire formats. Future model/metric/prediction stages must use the shared label space and their prescribed inventory metadata; those stages, normalized dataset assembly and production-corpus readiness remain unimplemented. No post-hoc mapped model/confidence conversion is provided or claimed.
 
 ### 4. Implement Literature Streaming and Contamination Controls
 
@@ -178,8 +212,8 @@ Update this table with the actual command result, date, and relevant evidence du
 |---|---|---|
 | Lint | `uv run ruff check .` | Failed: unchanged `scripts/fetch_dictionary.py` I001; changed-code lint passed |
 | Formatting | `uv run ruff format --check .` | Failed: unchanged `scripts/fetch_dictionary.py` requires formatting; changed-code formatting passed |
-| Types | `uv run mypy src/crf/` | Passed (2026-10-28): 15 source files |
-| Tests | `uv run pytest tests/ -v` | Passed (2026-10-28): 274 tests, including 47 lifecycle/resource tests and two offline integration tests |
+| Types | `uv run mypy src/crf/` | Passed (2026-10-28): 17 source files |
+| Tests | `uv run pytest tests/ -v` | Passed (2026-10-28): 422 tests, including 89 shared label-space tests, 59 gold parser/audit tests and two offline integration tests |
 
 ## Open Dependencies and Blockers
 

@@ -9,17 +9,15 @@ from typing import cast
 import yaml
 from yaml.nodes import MappingNode
 
+from crf.data.labels import SERVICE_TAGS as SERVICE_TAGS
+from crf.data.labels import UPOS as UPOS
+from crf.data.labels import TagMapping, TagMappingError
 from crf.utils.paths import (
     PathValidationError,
     reject_symlink_ancestors,
     repository_path,
     resolve_cli_path,
 )
-
-UPOS = frozenset(
-    "ADJ ADP ADV AUX CCONJ DET INTJ NOUN NUM PART PRON PROPN PUNCT SCONJ SYM VERB X".split()
-)
-SERVICE_TAGS = frozenset({"ADP", "CCONJ", "SCONJ", "PART"})
 
 
 class ConfigError(ValueError):
@@ -120,10 +118,22 @@ class PipelineConfig:
     resources: ResourceConfig = ResourceConfig()
     evaluation: EvaluationConfig = EvaluationConfig()
 
+    @property
+    def label_space(self) -> TagMapping:
+        """Shared validated label contract, including for directly built configs."""
+        try:
+            return TagMapping(self.tag_mapping)
+        except TagMappingError as exc:
+            raise ConfigError(str(exc)) from exc
+
+    @property
+    def target_inventory(self) -> tuple[str, ...]:
+        return self.label_space.target_inventory
+
     def to_dict(self) -> dict[str, object]:
         """Return complete JSON-compatible effective settings without machine paths."""
         result = asdict(self)
-        result["tag_mapping"] = dict(self.tag_mapping)
+        result["tag_mapping"] = dict(self.label_space.entries)
         for key in ("train_gold", "val_gold", "test_gold", "literature_dir"):
             result["data"][key] = getattr(self.data, key).as_posix()
         for key in ("c1_grid", "c2_grid"):
@@ -255,18 +265,10 @@ def parse_config(
         raise ConfigError(
             f"data.source_encoding: unsupported text codec {encoding}"
         ) from exc
-    mapping = _mapping(raw.get("tag_mapping", {}), "tag_mapping", set(SERVICE_TAGS))
-    if mapping:
-        targets = [_string(item, "tag_mapping target") for item in mapping.values()]
-        if (
-            mapping.keys() != SERVICE_TAGS
-            or len(set(targets)) != 1
-            or targets[0] in UPOS
-            or any(char.isspace() for char in targets[0])
-        ):
-            raise ConfigError(
-                "tag_mapping: map all four service tags to one new whitespace-free label"
-            )
+    try:
+        mapping = TagMapping.from_dict(raw.get("tag_mapping", {}))
+    except TagMappingError as exc:
+        raise ConfigError(str(exc)) from exc
     versions = _section(raw, "preprocessing", asdict(PreprocessingConfig()))
     features = _section(raw, "features", asdict(FeatureConfig()))
     for key, version in (versions | features).items():
@@ -301,9 +303,7 @@ def parse_config(
             source_encoding=encoding,
         ),
         seed=effective_seed,
-        tag_mapping=tuple(
-            sorted((key, cast(str, item)) for key, item in mapping.items())
-        ),
+        tag_mapping=mapping.entries,
         preprocessing=PreprocessingConfig(
             normalizer_version=_integer(
                 versions["normalizer_version"], "normalizer_version"
