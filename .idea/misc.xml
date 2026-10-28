@@ -1,7 +1,10 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <project version="4">
   <component name="Black">
-    <option name="sdkName" value="Python 3.9 (postag)" />
+    <option name="sdkName" value="uv (git)" />
   </component>
-  <component name="ProjectRootManager" version="2" project-jdk-name="Python 3.9 (postag)" project-jdk-type="Python SDK" />
+  <component name="ProjectRootManager" version="2" project-jdk-name="Python 3.14 (postag, uv)" project-jdk-type="Python SDK" />
+  <component name="PyTestFrameworkService">
+    <option name="PROJECT_TEST_RUNNER" value="pytest" />
+  </component>
 </project>

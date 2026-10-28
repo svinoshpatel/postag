@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<module type="PYTHON_MODULE" version="4">
+  <component name="NewModuleRootManager">
+    <content url="file://$MODULE_DIR$/..">
+      <sourceFolder url="file://$MODULE_DIR$/../src" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/../tests" isTestSource="true" />
+      <sourceFolder url="file://$MODULE_DIR$" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/src" isTestSource="false" />
+      <excludeFolder url="file://$MODULE_DIR$/../.venv" />
+      <excludeFolder url="file://$MODULE_DIR$/../.mypy_cache" />
+      <excludeFolder url="file://$MODULE_DIR$/../.pytest_cache" />
+      <excludeFolder url="file://$MODULE_DIR$/../.ruff_cache" />
+      <excludeFolder url="file://$MODULE_DIR$/../dist" />
+      <excludeFolder url="file://$MODULE_DIR$/../data/interim" />
+      <excludeFolder url="file://$MODULE_DIR$/../data/processed" />
+      <excludeFolder url="file://$MODULE_DIR$/../models" />
+      <excludeFolder url="file://$MODULE_DIR$/../reports" />
+      <excludeFolder url="file://$MODULE_DIR$/../labimbo/.venv" />
+      <excludeFolder url="file://$MODULE_DIR$/.venv" />
+    </content>
+    <orderEntry type="jdk" jdkName="uv (git)" jdkType="Python SDK" />
+    <orderEntry type="sourceFolder" forTests="false" />
+  </component>
+</module>

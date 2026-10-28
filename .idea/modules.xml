@@ -2,7 +2,7 @@
 <project version="4">
   <component name="ProjectModuleManager">
     <modules>
-      <module fileurl="file://$PROJECT_DIR$/.idea/postag.iml" filepath="$PROJECT_DIR$/.idea/postag.iml" />
+      <module fileurl="file://$PROJECT_DIR$/.idea/ukrainian-crf-postag.iml" filepath="$PROJECT_DIR$/.idea/ukrainian-crf-postag.iml" />
     </modules>
   </component>
 </project>

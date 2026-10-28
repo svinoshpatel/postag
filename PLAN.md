@@ -6,7 +6,7 @@ See [AGENTS.md](AGENTS.md) for operating procedures and [docs/ARCH.md](docs/ARCH
 
 Implement a reproducible Ukrainian CRF self-training pipeline with isolated development and final evaluation, usable raw-text inference, and validated run artifacts. Preserve the approved experiment design and original datasets.
 
-Milestone 1 is implemented: the locked CPython 3.14 environment and installable `src/crf/` foundations replace the incompatible `postag/` experiments. Later milestones remain unchecked; the tokenizer backend and surface features do not establish a complete preprocessing or training pipeline.
+Milestone 1 is implemented: the locked CPython 3.14 environment and installable `src/crf/` foundations replace the incompatible `postag/` experiments. Milestone 2 task 1 is implemented; the remaining later tasks are unchecked. The tokenizer backend and surface features do not establish a complete preprocessing or training pipeline.
 
 Gold-corpus availability, release identity, and compatibility checks are pending. Small deterministic fixtures support implementation and offline verification without production data. Full corpus runs have a separate readiness gate below; missing inputs must not be replaced with another split or fabricated data. No sprint duration or delivery estimate is assumed.
 
@@ -38,13 +38,37 @@ Milestone 1 verification exception: repository-wide Ruff lint and formatting fai
 - Replacement tests will derive feature values and boundaries from the architecture, check invalid/annotated inputs, original code-point slices and immutable records, and exercise installed-package imports and compiled CRFsuite fitting/serialization with tiny deterministic fixtures. The latter checks dependency compatibility, not experiment quality.
 - Baseline checks found legacy lint/format failures, including the unrelated `scripts/fetch_dictionary.py`. Preserve that file and record its failure if it remains after migration; do not weaken repository checks.
 
+#### PyCharm environment follow-up (2026-10-28)
+
+- [x] Align project/module roots and inherited interpreter with the uv-managed Python 3.14 environment; preserve existing project-model changes.
+- [x] Register the existing environment as a native uv SDK, add current preview/test run configurations, and document reload/setup behavior.
+- [x] Validate XML/path references, interpreter/import compatibility, and all four required checks; record IDE validation limits and pre-existing failures.
+
+PyCharm follow-up verification: parsed all project XML, resolved source/test roots to existing directories, checked the inherited SDK against the local interpreter registry (Python 3.14.6, native uv, pip disabled), imported `crf` through `.venv/bin/python`, and executed the shared preview command successfully. A backup of the prior local SDK registry was saved before the targeted update; other SDK entries were preserved. The automatic pyproject module model was observed rewriting roots incorrectly and is disabled as documented in `docs/ARCH.md` and `docs/PYCHARM.md`. PyCharm must restart to reload the externally updated SDK registry. UI verification was unavailable because both native-app connection attempts timed out; no successful IDE Run/Debug or indexing result is claimed. Full checks rerun: mypy passed (7 source files), pytest passed (20 tests); lint/format retain only the previously documented unchanged `scripts/fetch_dictionary.py` failures. Concurrent IDE changes to `vcs.xml`/source-root detection and pre-existing Git changes were not staged or committed by this task.
+
 ### 2. Implement Shared Configuration, Artifact, and Resource Foundations
 
 Prerequisite: milestone 1. Architecture: [Artifact & Run Contracts](docs/ARCH.md) and [CLI & Configuration Contract](docs/ARCH.md).
 
-- [ ] Implement strict YAML configuration validation, documented defaults, seed precedence, version checks, and repository-relative path resolution. Acceptance: invalid/duplicate/unknown fields and incompatible settings fail explicitly; gold split aliases and source/output path violations are rejected.
+- [x] Implement strict YAML configuration validation, documented defaults, seed precedence, version checks, and repository-relative path resolution. Acceptance: invalid/duplicate/unknown fields and incompatible settings fail explicitly; gold split aliases and source/output path violations are rejected.
 - [ ] Implement typed sentence records, JSON/JSONL validators, canonical configuration hashing, deterministic sentence identities, and automatic input identities. Acceptance: exact schema fields, types, checksums, alignment, and nullability are enforced without exposing labels to feature code.
 - [ ] Implement unique output allocation, publish-once completion handling, logging, and aggregate RSS monitoring. Acceptance: existing artifacts and raw inputs cannot be overwritten, diagnostics remain on stderr, budget violations fail, and incomplete runs cannot be treated as successful.
+
+Milestone 2 task 1 verification (2026-10-28): 88 new deterministic configuration/path tests pass; all 108 repository tests and strict core types (9 source files) pass. Changed-code Ruff lint and formatting pass. Full repository lint/format retain only the unchanged `scripts/fetch_dictionary.py` failures, reproduced before implementation (I001 and required formatting); this is the permitted pre-existing-failure exception. No checks were weakened, no production inputs were read, and no pipeline artifacts were generated. Unique output allocation, content auditing, artifact schemas/hashes, and future pipeline CLIs remain unchecked subsequent tasks.
+
+#### Milestone 2, task 1 execution steps (2026-10-28)
+
+1. Define the configuration API and document unresolved schema/path/domain details before implementation.
+2. Implement strict safe YAML loading, immutable effective settings, seed precedence, and read-only path validation in `src/crf/utils/`.
+3. Record specification review and boundary cases before adding deterministic offline tests; run focused tests and all four required checks.
+
+#### Milestone 2, task 1 specification review before tests
+
+- Safe YAML: a local SafeLoader constructor rejects duplicate/non-string keys at every depth, unsafe tags, merge keys, and recursive aliases. Each section enforces an exact field allowlist, required fields, and strict types; booleans cannot pass as numbers. Nonfinite values, unsupported versions, invalid encodings, empty/duplicate grids, invalid tag consolidation, and resource incompatibility fail.
+- Immutable records contain all defaults; only an explicit CLI seed overrides YAML, while the bootstrap seed stays independent. Effective dictionaries contain POSIX corpus paths and JSON-compatible arrays/numbers. Zero regularization, thresholds at 0/1, ratio zero, and unlimited CRF iterations are valid boundaries.
+- Path checks resolve relative CLI/config/data paths from the explicit repository root. Gold files must exist, remain under gold, and have distinct device/inode identities; literature uses its prescribed directory without symlinks. Validation reads no annotation contents. Metadata-only parsing does not require original files.
+- Output checks are read-only and reject existing/dangling entries, symlink ancestors, raw destinations, and artifact-tree escapes. Atomic allocation/publication, corpus discovery/content auditing, hashing and artifact schemas remain subsequent tasks.
+- Tests will use temporary repositories and opaque gold-file bytes, exercise all sections and defaults/overrides, malformed YAML and nested duplicates, hard/symbolic aliases, missing/escaping sources, and fresh versus existing/redirected output paths. No production input or generated artifact is touched.
 
 ### 3. Implement Gold Parsing, Target Mapping, and Features
 
@@ -121,8 +145,8 @@ Update this table with the actual command result, date, and relevant evidence du
 |---|---|---|
 | Lint | `uv run ruff check .` | Failed: unchanged `scripts/fetch_dictionary.py` I001; changed-code lint passed |
 | Formatting | `uv run ruff format --check .` | Failed: unchanged `scripts/fetch_dictionary.py` requires formatting; changed-code formatting passed |
-| Types | `uv run mypy src/crf/` | Passed: 7 source files |
-| Tests | `uv run pytest tests/ -v` | Passed: 20 tests, including one offline integration test |
+| Types | `uv run mypy src/crf/` | Passed (2026-10-28): 9 source files |
+| Tests | `uv run pytest tests/ -v` | Passed (2026-10-28): 108 tests, including 88 configuration/path tests and one offline integration test |
 
 ## Open Dependencies and Blockers
 

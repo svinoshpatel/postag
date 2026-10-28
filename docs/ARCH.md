@@ -42,7 +42,7 @@ The project uses two main data sources:
 
 * **Mapping semantics:** Apply the configured mapping to validated original UPOS labels in memory or in separate derived artifacts only. For the example above, `ADP`, `CCONJ`, `SCONJ`, and `PART` become `FUNC`; all other labels remain unchanged. Original gold files on disk and the original UPOS labels retained by the loader must remain untouched. Reject mappings that omit any of the four service tags, include other source tags, or assign different consolidated targets. The consolidated target name must be a nonempty string without whitespace and must not collide with an original UD tag.
 * **Consistent target space:** Fix and record the mapping before model selection. Use it identically for `train_gold` training targets and `val_gold`/`test_gold` evaluation targets. Train both `CRF-Gate` and `CRF-Final` directly in the resulting target space; gate predictions, marginals, and pseudo-labels use that same space. Mapping changes require a new experiment, retraining both models, and regenerating pseudo-labels. Do not obtain mapped confidence scores by merely renaming labels or combining marginals from an unmapped gate.
-* **Reporting and compatibility:** Record the mapping and resulting target inventory with configurations, derived datasets, models, and evaluation reports. Report per-tag and aggregate metrics in that inventory. The example yields 14 target classes and cannot distinguish the four original service tags. Compare gate and final metrics only under the same mapping, and identify consolidated-task results separately from original 17-tag UPOS results. `FUNC` is a custom target label, not a valid standard UD UPOS value; do not write mapped labels into original gold files or present mapped output as standard UD UPOS annotation.
+* **Reporting and compatibility:** Record the mapping and resulting target inventory with configurations, derived datasets, models, and evaluation reports. Report per-tag and aggregate metrics in that inventory. The example yields 14 target classes and cannot distinguish the four original service tags. Compare gate and final metrics only under the same mapping and identify consolidated-task results separately from the original 17-tag UPOS results. `FUNC` is a custom target label, not a valid standard UD UPOS value; do not write mapped labels into original gold files or present mapped output as standard UD UPOS annotation.
 
 ### Core Methodology: Two-Stage Self-Training Workflow
 1. **Stage 1 — Baseline (`CRF-Gate`):**
@@ -67,17 +67,17 @@ The project uses two main data sources:
 
 Use a first-order linear-chain CRF trained by regularized conditional log-likelihood through `sklearn-crfsuite`. Use `algorithm="lbfgs"`; CRFsuite internally uses OWL-QN when L1 regularization is nonzero. Train every candidate from scratch except for the explicitly permitted reuse of gold-only candidates when pseudo-label selection is empty. The reference settings are documented in the [CRFsuite API](https://sklearn-crfsuite.readthedocs.io/en/latest/api.html).
 
-| Fixed setting | Value |
-|---|---:|
-| `max_iterations` | 200 |
-| `num_memories` | 6 |
-| `epsilon` | `1e-5` |
-| `period` | 10 |
-| `delta` | `1e-5` |
-| `min_freq` | 0 |
-| `all_possible_states` | `False` |
-| `all_possible_transitions` | `True` |
-| Pipeline seed | 42 |
+| Fixed setting              |   Value |
+|----------------------------|--------:|
+| `max_iterations`           |     200 |
+| `num_memories`             |       6 |
+| `epsilon`                  |  `1e-5` |
+| `period`                   |      10 |
+| `delta`                    |  `1e-5` |
+| `min_freq`                 |       0 |
+| `all_possible_states`      | `False` |
+| `all_possible_transitions` |  `True` |
+| Pipeline seed              |      42 |
 
 Enabling all label transitions permits transitions absent from the training examples; leaving all possible state features disabled limits feature expansion.
 
@@ -88,19 +88,19 @@ Enabling all label transitions permits transitions absent from the training exam
 
 ### Raw-Text Segmentation Contract
 
-* **Backend and reproducibility:** Use `tokenize_uk`'s non-legacy Ukrainian sentence and token span APIs through a reusable adapter in `src/crf/data/`. Pin the reviewed package version and its dependencies during environment setup, and record the adapter version and segmentation configuration with each run. Use the same adapter for literature pseudo-labeling and raw-text inference. Gold sentences retain their supplied segmentation. The reference APIs are documented in [tokenize_uk](https://github.com/lang-uk/tokenize-uk/blob/master/docs/api.md).
+* **Backend and reproducibility:** Use `tokenize_uk`'s non-legacy Ukrainian sentence and token span APIs through a reusable adapter in `src/crf/data/`. Pin the reviewed package version and its dependencies during environment setup and record the adapter version and segmentation configuration with each run. Use the same adapter for literature pseudo-labeling and raw-text inference. Gold sentences retain their supplied segmentation. The reference APIs are documented in [tokenize_uk](https://github.com/lang-uk/tokenize-uk/blob/master/docs/api.md).
 * **Decoding and paragraph boundaries:** Decode incrementally using UTF-8 by default, permitting an explicitly configured source encoding. Decoding errors must fail with source diagnostics; do not silently replace characters. Blank lines delimit paragraphs; EOF closes the final paragraph. Single line breaks remain within a paragraph and must not independently force sentence boundaries. Never join text across files or paragraphs.
 * **Sentence segmentation and alignment:** Apply the shared normalization contract before segmentation while retaining original text and alignment to its decoded character offsets. Segment complete paragraphs using Ukrainian sentence rules. Do not split sentences at read-buffer boundaries. Preserve source identity, paragraph/sentence ordinals, original token spans, and normalized feature forms. Discard whitespace-only results.
 * **UD compatibility:** Apply versioned token-boundary rules consistent with [Ukrainian UD](https://universaldependencies.org/uk/): separate punctuation, compound hyphens, and abbreviation periods; preserve internal word apostrophes and digit groups such as `1 000 000`. Sentence splitting remains abbreviation-aware even when tokenization separates abbreviation periods. Do not invent multiword-token expansions. Initially, reject pseudo-label sentences containing known multiword-token surface forms observed in `train_gold`, unless a versioned expansion rule supports them. Report this exclusion and residual segmentation limitations. Check compatibility using reconstructed training text; do not tune segmentation against test data.
 
 Resource limits are configurable and must be recorded with each run:
 
-| Configuration | Default |
-|---|---:|
-| Maximum buffered paragraph | 65,536 decoded characters |
-| Maximum raw sentence | 16,384 decoded characters |
-| Maximum raw sentence tokens, after adaptation | 256 |
-| Literature batch token limit | 4,096 |
+| Configuration                                 |                   Default |
+|-----------------------------------------------|--------------------------:|
+| Maximum buffered paragraph                    | 65,536 decoded characters |
+| Maximum raw sentence                          | 16,384 decoded characters |
+| Maximum raw sentence tokens, after adaptation |                       256 |
+| Literature batch token limit                  |                     4,096 |
 
 Character limits count decoded Unicode code points before normalization. The sentence token limit applies after token-boundary adaptation. If a paragraph exceeds its buffer limit, discard that whole paragraph while streaming to the next paragraph boundary. Reject oversized sentence candidates intact. Never turn a rejected paragraph or sentence into artificial training fragments. Report rejection counts and affected text volume. These filtering limits do not apply to gold evaluation sentences.
 
@@ -129,7 +129,7 @@ The minimum marginal is a sentence acceptance score, not a joint sequence probab
 * **Token budget:** Let `N_gold` be the number of supervised tokens in `train_gold`. The effective cap is `max_pseudo_tokens = floor(pseudo_to_gold_ratio * N_gold)`, with ratio `1.0` by default. Count tokens after parsing/tokenization; tag mapping does not change token counts. Fix and record the ratio and seed before the model-selection search.
 * **Reproducible ordering:** After contamination removal and deduplication, assign each sentence a priority by hashing the UTF-8 string `{seed}:{sentence_fingerprint}` with SHA-256. Represent the seed as a nonnegative decimal integer and the fingerprint as lowercase hexadecimal. Sort ascending by priority, breaking ties by sentence fingerprint. Use disk-backed sorting rather than loading all candidates into memory. The same sentence receives the same priority across all three thresholds.
 * **Whole-sentence selection:** For each threshold, consider only sentences that meet its confidence rule. Walk them in priority order. Include a sentence if all its tokens fit within the remaining budget; otherwise skip it and continue. Never split a sentence, exceed the cap, or duplicate sentences to fill unused space. The cap may remain partly unfilled. Selected datasets at different thresholds need not be subsets of one another after sampling.
-* **Training consistency:** Freeze one selected dataset per threshold and reuse it for all nine regularization candidates. Preserve official gold sentence order, then append pseudo-labeled sentences in priority order. Include each gold sentence and selected pseudo-labeled sentence once, without confidence weighting or automatic POS balancing. Record eligible/selected counts, budget exclusions, cap utilization, source distribution, and predicted-label distribution.
+* **Training consistency:** Freeze one selected dataset per threshold and reuse it for all nine regularization candidates. Preserve the official gold sentence order, then append pseudo-labeled sentences in the priority order. Include each gold sentence and selected pseudo-labeled sentence once, without confidence weighting or automatic POS balancing. Record eligible/selected counts, budget exclusions, cap utilization, source distribution, and predicted-label distribution.
 * **Empty selections:** Never lower the threshold automatically when no sentences are selected. Mark that threshold as a no-augmentation case. Reuse the corresponding nine cached gold-only candidates instead of repeating identical fits, recording the reuse explicitly. If every threshold selects nothing, report that self-training could not be performed and retain the selected baseline. A reused baseline result must not be presented as a newly trained augmented model or as evidence of augmentation gains.
 
 ### Evaluation Contract
@@ -222,13 +222,13 @@ training artifacts and is not a substitute for the future pipeline or prediction
 
 Generate a unique `run_id` automatically. Write each run into new directories; reject output paths that would overwrite existing artifacts or resolve inside `data/raw/`. Final evaluation adds new outputs to the same frozen experiment's run directories without overwriting development artifacts. Standalone prediction creates a fresh run directory under `reports/`.
 
-| Location | Contents |
-|---|---|
-| `data/interim/<run_id>/` | Pseudo-label candidates, contamination indexes, sampling intermediates |
-| `data/processed/<run_id>/` | Derived gold records and one frozen augmented dataset per threshold |
-| `models/<run_id>/candidates/<candidate_id>/` | `model.joblib` and `metadata.json` for each fitted candidate |
-| `models/<run_id>/selected.json` | Candidate IDs and checksums identifying gate, final, and control |
-| `reports/<run_id>/` | Configuration, input identities, trial results, predictions, metrics, and bootstrap results |
+| Location                                     | Contents                                                                                    |
+|----------------------------------------------|---------------------------------------------------------------------------------------------|
+| `data/interim/<run_id>/`                     | Pseudo-label candidates, contamination indexes, sampling intermediates                      |
+| `data/processed/<run_id>/`                   | Derived gold records and one frozen augmented dataset per threshold                         |
+| `models/<run_id>/candidates/<candidate_id>/` | `model.joblib` and `metadata.json` for each fitted candidate                                |
+| `models/<run_id>/selected.json`              | Candidate IDs and checksums identifying gate, final, and control                            |
+| `reports/<run_id>/`                          | Configuration, input identities, trial results, predictions, metrics, and bootstrap results |
 
 Reused models reference their existing candidate IDs; do not create records claiming another fit occurred. Keep models on disk between fits rather than retaining all candidate estimators in memory.
 
@@ -238,35 +238,35 @@ Use UTF-8 JSONL: one complete sentence object per line, LF line endings, no BOM,
 
 Every dataset sentence object has exactly the following required fields, including explicit `null` values where specified:
 
-| Field | Type and meaning |
-|---|---|
-| `schema_version` | Integer `1`. |
-| `record_type` | String `gold` or `pseudo`. |
-| `sentence_id` | Lowercase SHA-256 identifier constructed below. |
-| `source_path` | Repository-relative POSIX path to the original input, without leading `/` or `.`/`..` path components. |
-| `source_sha256` | Lowercase SHA-256 checksum of the original file bytes. |
-| `source_role` | String `train_gold`, `val_gold`, `test_gold`, or `literature`. |
-| `sentence_ordinal` | Positive integer counting sentences within the source before sentence-level filtering. |
-| `paragraph_ordinal` | Positive integer for literature; `null` for gold. |
-| `surface_text` | Nonempty original sentence text, or reconstructed gold surface text. |
-| `surface_text_origin` | String `original` or `reconstructed`. |
-| `token_ids` | Array of positive integers: original consecutive gold word IDs, or literature IDs assigned consecutively from `1`. |
-| `original_forms` | Array of nonempty original token-form strings. |
-| `normalized_forms` | Array of nonempty, case-preserving token-form strings produced by the shared normalizer; lexical lowercasing remains a feature-extraction operation. |
-| `token_spans` | Array whose entries are `[start, end]` integer pairs or `null` when reliable source offsets are unavailable. |
-| `original_upos` | Array of original UPOS strings for gold; `null` for pseudo-labels. |
-| `target_labels` | Array of mapped gold target strings or predicted pseudo-label strings in the configured target inventory. |
-| `pseudo` | `null` for gold; an object with exactly the fields below for pseudo-labels. |
+| Field                 | Type and meaning                                                                                                                                     |
+|-----------------------|------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `schema_version`      | Integer `1`.                                                                                                                                         |
+| `record_type`         | String `gold` or `pseudo`.                                                                                                                           |
+| `sentence_id`         | Lowercase SHA-256 identifier constructed below.                                                                                                      |
+| `source_path`         | Repository-relative POSIX path to the original input, without leading `/` or `.`/`..` path components.                                               |
+| `source_sha256`       | Lowercase SHA-256 checksum of the original file bytes.                                                                                               |
+| `source_role`         | String `train_gold`, `val_gold`, `test_gold`, or `literature`.                                                                                       |
+| `sentence_ordinal`    | Positive integer counting sentences within the source before sentence-level filtering.                                                               |
+| `paragraph_ordinal`   | Positive integer for literature; `null` for gold.                                                                                                    |
+| `surface_text`        | Nonempty original sentence text, or reconstructed gold surface text.                                                                                 |
+| `surface_text_origin` | String `original` or `reconstructed`.                                                                                                                |
+| `token_ids`           | Array of positive integers: original consecutive gold word IDs, or literature IDs assigned consecutively from `1`.                                   |
+| `original_forms`      | Array of nonempty original token-form strings.                                                                                                       |
+| `normalized_forms`    | Array of nonempty, case-preserving token-form strings produced by the shared normalizer; lexical lowercasing remains a feature-extraction operation. |
+| `token_spans`         | Array whose entries are `[start, end]` integer pairs or `null` when reliable source offsets are unavailable.                                         |
+| `original_upos`       | Array of original UPOS strings for gold; `null` for pseudo-labels.                                                                                   |
+| `target_labels`       | Array of mapped gold target strings or predicted pseudo-label strings in the configured target inventory.                                            |
+| `pseudo`              | `null` for gold; an object with exactly the fields below for pseudo-labels.                                                                          |
 
 The non-null `pseudo` object contains:
 
-| Field | Type and meaning |
-|---|---|
-| `token_confidences` | Array of finite numbers in `[0, 1]`, each the marginal of that token's Viterbi-predicted target label. |
-| `min_confidence` | Finite number equal to the minimum of `token_confidences`, without rounding. |
-| `sentence_fingerprint` | Lowercase SHA-256 string from the Corpus Contamination Prevention contract. |
-| `sampling_priority` | Lowercase SHA-256 string from the Pseudo-Label Sampling Contract. |
-| `gate_model_sha256` | Lowercase SHA-256 checksum of the gate's serialized model file. |
+| Field                  | Type and meaning                                                                                       |
+|------------------------|--------------------------------------------------------------------------------------------------------|
+| `token_confidences`    | Array of finite numbers in `[0, 1]`, each the marginal of that token's Viterbi-predicted target label. |
+| `min_confidence`       | Finite number equal to the minimum of `token_confidences`, without rounding.                           |
+| `sentence_fingerprint` | Lowercase SHA-256 string from the Corpus Contamination Prevention contract.                            |
+| `sampling_priority`    | Lowercase SHA-256 string from the Pseudo-Label Sampling Contract.                                      |
+| `gate_model_sha256`    | Lowercase SHA-256 checksum of the gate's serialized model file.                                        |
 
 Construct `sentence_id` by serializing the ordered array `[source_role, source_path, source_sha256, sentence_ordinal]` as JSON with `ensure_ascii=False`, `separators=(",", ":")`, and no trailing newline, then hashing its UTF-8 bytes with SHA-256. All SHA-256 fields contain exactly 64 lowercase hexadecimal characters. Sentence identity tracks source provenance; it is distinct from the normalized-text fingerprint used for overlap detection.
 
@@ -282,22 +282,22 @@ Create `test_gold` dataset records only during final evaluation. The earlier con
 
 Serialize each successfully fitted estimator as `model.joblib` and store `metadata.json` beside it. The sidecar has exactly these required fields:
 
-| Field | Type and meaning |
-|---|---|
-| `schema_version` | Integer `1`. |
-| `run_id`, `candidate_id` | Nonempty strings containing only ASCII letters, digits, `_`, and `-`. A candidate ID is unique within its run. |
-| `model_sha256` | Lowercase SHA-256 checksum of the exact `model.joblib` bytes. |
-| `training_dataset_sha256` | Lowercase SHA-256 checksum of the exact training JSONL bytes, including record order and line endings. |
-| `training_sentence_count`, `training_token_count` | Positive integer totals for the training dataset. |
-| `pseudo_sentence_count`, `pseudo_token_count` | Nonnegative integer pseudo-label counts included in those totals; both are zero for gold-only candidates. |
-| `crf_parameters` | Object recording the complete effective estimator parameters, including `algorithm`, `c1`, and `c2`. |
-| `effective_config` | Complete resolved configuration conforming to the CLI & Configuration Contract. |
-| `target_inventory` | Array of unique target-label strings in alphabetical order, equal to the inventory implied by the configured tag mapping. |
-| `python_version`, `unicode_version` | Nonempty exact Python and Unicode database version strings. |
-| `dependency_versions` | Object mapping installed dependency names to nonempty exact version strings. |
-| `seed` | Nonnegative integer pipeline seed equal to `effective_config.seed`. |
-| `termination_reason` | String `converged` or `iteration_limit`. The latter is budget-limited, not evidence of convergence. |
-| `iterations` | Nonnegative integer number of optimizer iterations performed. |
+| Field                                             | Type and meaning                                                                                                          |
+|---------------------------------------------------|---------------------------------------------------------------------------------------------------------------------------|
+| `schema_version`                                  | Integer `1`.                                                                                                              |
+| `run_id`, `candidate_id`                          | Nonempty strings containing only ASCII letters, digits, `_`, and `-`. A candidate ID is unique within its run.            |
+| `model_sha256`                                    | Lowercase SHA-256 checksum of the exact `model.joblib` bytes.                                                             |
+| `training_dataset_sha256`                         | Lowercase SHA-256 checksum of the exact training JSONL bytes, including record order and line endings.                    |
+| `training_sentence_count`, `training_token_count` | Positive integer totals for the training dataset.                                                                         |
+| `pseudo_sentence_count`, `pseudo_token_count`     | Nonnegative integer pseudo-label counts included in those totals; both are zero for gold-only candidates.                 |
+| `crf_parameters`                                  | Object recording the complete effective estimator parameters, including `algorithm`, `c1`, and `c2`.                      |
+| `effective_config`                                | Complete resolved configuration conforming to the CLI & Configuration Contract.                                           |
+| `target_inventory`                                | Array of unique target-label strings in alphabetical order, equal to the inventory implied by the configured tag mapping. |
+| `python_version`, `unicode_version`               | Nonempty exact Python and Unicode database version strings.                                                               |
+| `dependency_versions`                             | Object mapping installed dependency names to nonempty exact version strings.                                              |
+| `seed`                                            | Nonnegative integer pipeline seed equal to `effective_config.seed`.                                                       |
+| `termination_reason`                              | String `converged` or `iteration_limit`. The latter is budget-limited, not evidence of convergence.                       |
+| `iterations`                                      | Nonnegative integer number of optimizer iterations performed.                                                             |
 
 Record the parameters used for that candidate, not only the search grid or library defaults. Counts must agree with the ordered training records; pseudo-label counts cannot exceed their corresponding totals and must describe the same selected sentences. Training records remain under the run's processed-data location. Reused candidates retain their original metadata and training-dataset checksum rather than acquiring an augmented-training history they did not have.
 
@@ -309,13 +309,13 @@ Reject unknown or duplicate sidecar fields, invalid types, booleans in numeric f
 
 Write `models/<run_id>/selected.json` only after development completes successfully. It has exactly these required fields:
 
-| Field | Type and meaning |
-|---|---|
-| `schema_version` | Integer `1`. |
-| `run_id` | Identifier matching the containing run and referenced model metadata. |
-| `effective_config_sha256` | Lowercase SHA-256 checksum of the resolved configuration encoded as specified below. |
-| `selected_threshold` | Finite number in `[0, 1]` belonging to the frozen threshold grid. |
-| `gate`, `final`, `gold_control` | Objects containing exactly `candidate_id`, `model_sha256`, and `metadata_sha256`. |
+| Field                           | Type and meaning                                                                     |
+|---------------------------------|--------------------------------------------------------------------------------------|
+| `schema_version`                | Integer `1`.                                                                         |
+| `run_id`                        | Identifier matching the containing run and referenced model metadata.                |
+| `effective_config_sha256`       | Lowercase SHA-256 checksum of the resolved configuration encoded as specified below. |
+| `selected_threshold`            | Finite number in `[0, 1]` belonging to the frozen threshold grid.                    |
+| `gate`, `final`, `gold_control` | Objects containing exactly `candidate_id`, `model_sha256`, and `metadata_sha256`.    |
 
 Each model reference identifies `models/<run_id>/candidates/<candidate_id>/`. Candidate identifiers follow the sidecar identifier rules; resolve paths within that run's candidate directory and reject escapes or metadata/checksum mismatches. `metadata_sha256` hashes the exact sidecar file bytes. Several roles may reference the same candidate; empty selections reuse baseline references without creating another fitted-model record. Require the gold-only control's `c1` and `c2` to match the final model's and its pseudo-label counts to be zero.
 
@@ -327,28 +327,28 @@ Apply the same strict schema, type, finite-number, and checksum validation to fr
 
 Generate the following development-history files automatically under `reports/<run_id>/`. They are not manually maintained source manifests. All JSON/JSONL files use UTF-8 without a BOM, reject duplicate or unknown fields and nonfinite numbers, and enforce their declared types. Boolean values are not numeric counts or hyperparameters. Identifiers and checksums follow the model-bundle rules.
 
-| File | Contents |
-|---|---|
-| `effective_config.json` | Complete resolved configuration using the exact JSON encoding defined for `effective_config_sha256`. |
-| `inputs.jsonl` | One source-identity object per gold split and eligible literature file. |
-| `trials.jsonl` | One terminal record for every planned baseline/final configuration. |
-| `run.json` | Immutable development-completion descriptor linking configuration, inputs, trials, and frozen selection. |
+| File                    | Contents                                                                                                 |
+|-------------------------|----------------------------------------------------------------------------------------------------------|
+| `effective_config.json` | Complete resolved configuration using the exact JSON encoding defined for `effective_config_sha256`.     |
+| `inputs.jsonl`          | One source-identity object per gold split and eligible literature file.                                  |
+| `trials.jsonl`          | One terminal record for every planned baseline/final configuration.                                      |
+| `run.json`              | Immutable development-completion descriptor linking configuration, inputs, trials, and frozen selection. |
 
-Every input object has exactly `schema_version` (integer `1`), `source_role`, `source_path`, `source_sha256`, `size_bytes` (nonnegative integer), and `encoding` (nonempty string). Roles and repository-relative paths follow the dataset schema. Record gold inputs in `train_gold`, `val_gold`, `test_gold` order, then literature files in deterministic discovery order. Gold encoding is `utf-8`; literature encoding is the effective configured source encoding. Checksum and size describe original file bytes, not normalized text. Recording test-file identity does not authorize loading its labels during development.
+Every input object has exactly `schema_version` (integer `1`), `source_role`, `source_path`, `source_sha256`, `size_bytes` (nonnegative integer), and `encoding` (nonempty string). Roles and repository-relative paths follow the dataset schema. Record gold inputs in `train_gold`, `val_gold`, `test_gold` order, then literature files in deterministic discovery order. Gold encoding is `utf-8`; literature encoding is the effective-configured source encoding. Checksum and size describe original file bytes, not normalized text. Recording test-file identity does not authorize loading its labels during development.
 
 Every trial object has exactly these fields:
 
-| Field | Type and meaning |
-|---|---|
-| `schema_version`, `run_id`, `trial_id` | Integer `1` and run/trial identifier strings; trial IDs are unique within the run. |
-| `stage` | String `baseline` or `final`. |
-| `threshold` | `null` for baseline; a finite configured threshold for final. |
-| `crf_parameters` | Complete effective estimator parameters for that planned candidate. |
-| `training_dataset_sha256` | Exact ordered training-JSONL checksum, or `null` if dataset construction did not finish. |
-| `status` | String `fitted`, `reused`, `failed`, or `not_executed`. |
-| `model_ref` | Object with exactly `candidate_id`, `model_sha256`, and `metadata_sha256`, or `null` when no successful candidate result exists. |
-| `validation_accuracy`, `validation_macro_f1` | Finite numbers in `[0, 1]` for successful results; otherwise both `null`. |
-| `error` | `null` for success; otherwise an object with exactly nonempty string fields `stage` and `message` describing failure or why execution did not occur. |
+| Field                                        | Type and meaning                                                                                                                                     |
+|----------------------------------------------|------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `schema_version`, `run_id`, `trial_id`       | Integer `1` and run/trial identifier strings; trial IDs are unique within the run.                                                                   |
+| `stage`                                      | String `baseline` or `final`.                                                                                                                        |
+| `threshold`                                  | `null` for baseline; a finite configured threshold for final.                                                                                        |
+| `crf_parameters`                             | Complete effective estimator parameters for that planned candidate.                                                                                  |
+| `training_dataset_sha256`                    | Exact ordered training-JSONL checksum, or `null` if dataset construction did not finish.                                                             |
+| `status`                                     | String `fitted`, `reused`, `failed`, or `not_executed`.                                                                                              |
+| `model_ref`                                  | Object with exactly `candidate_id`, `model_sha256`, and `metadata_sha256`, or `null` when no successful candidate result exists.                     |
+| `validation_accuracy`, `validation_macro_f1` | Finite numbers in `[0, 1]` for successful results; otherwise both `null`.                                                                            |
+| `error`                                      | `null` for success; otherwise an object with exactly nonempty string fields `stage` and `message` describing failure or why execution did not occur. |
 
 Successful `fitted` and `reused` trials require a valid model reference, dataset checksum, and both validation metrics. Reused trials reference the existing candidate and its cached validation results; the recorded dataset checksum must match that candidate's actual gold-only training history. Failed or unexecuted trials have `model_ref: null` and null metrics. A trial that failed after writing a model is still unsuccessful; an orphaned bundle is not a successful trial result. Preserve unavailable dataset checksums explicitly as `null` rather than inventing identities.
 
@@ -356,44 +356,44 @@ Record each planned configuration exactly once when it reaches a terminal outcom
 
 The development descriptor `run.json` has exactly these fields:
 
-| Field | Type and meaning |
-|---|---|
-| `schema_version`, `run_id` | Integer `1` and the containing run's identifier. |
-| `status` | String `complete` or `failed`, describing development only. |
-| `started_at`, `finished_at` | UTC timestamp strings in ISO 8601 form ending in `Z`; finish must not precede start. |
-| `effective_config_sha256` | Checksum of the configuration encoded under the frozen-selection rules. |
-| `inputs_sha256`, `trials_sha256` | Checksums of the exact corresponding JSONL file bytes; `null` if that file could not be completed. |
-| `selected_sha256` | Checksum of the exact `models/<run_id>/selected.json` bytes on success; otherwise `null`. |
-| `source_revision` | Recorded Git commit identifier string, or `null` if unavailable. |
-| `source_dirty` | Boolean working-tree dirty-state observation, or `null` if unavailable. |
-| `python_version`, `unicode_version` | Exact nonempty version strings for the execution environment. |
-| `dependency_versions` | Dependency-name to exact-version mapping, using the model-bundle convention. |
-| `peak_rss_mib` | Finite nonnegative observed peak aggregate resident memory in MiB. |
-| `error` | `null` for success; otherwise the same `stage`/`message` object shape used by trials. |
+| Field                               | Type and meaning                                                                                   |
+|-------------------------------------|----------------------------------------------------------------------------------------------------|
+| `schema_version`, `run_id`          | Integer `1` and the containing run's identifier.                                                   |
+| `status`                            | String `complete` or `failed`, describing development only.                                        |
+| `started_at`, `finished_at`         | UTC timestamp strings in ISO 8601 form ending in `Z`; finish must not precede start.               |
+| `effective_config_sha256`           | Checksum of the configuration encoded under the frozen-selection rules.                            |
+| `inputs_sha256`, `trials_sha256`    | Checksums of the exact corresponding JSONL file bytes; `null` if that file could not be completed. |
+| `selected_sha256`                   | Checksum of the exact `models/<run_id>/selected.json` bytes on success; otherwise `null`.          |
+| `source_revision`                   | Recorded Git commit identifier string, or `null` if unavailable.                                   |
+| `source_dirty`                      | Boolean working-tree dirty-state observation, or `null` if unavailable.                            |
+| `python_version`, `unicode_version` | Exact nonempty version strings for the execution environment.                                      |
+| `dependency_versions`               | Dependency-name to exact-version mapping, using the model-bundle convention.                       |
+| `peak_rss_mib`                      | Finite nonnegative observed peak aggregate resident memory in MiB.                                 |
+| `error`                             | `null` for success; otherwise the same `stage`/`message` object shape used by trials.              |
 
 Capture source/environment identity at run start and record the observed peak using the pipeline memory-monitoring contract. Seeds, preprocessing versions, and effective resource limits are available through the linked effective configuration. Record sampling statistics under the existing sampling and guardrail contracts; the completion descriptor does not replace those diagnostics.
 
 Publish `run.json` once, after the development outcome and linked artifacts are finalized. A successful descriptor requires complete input/trial files, a successful fitted or permitted reused result for every planned configuration, and a valid frozen selection. Require its configuration/input/trial/selection checksums and candidate references to agree. A failed descriptor has `error` and cannot authorize evaluation. Missing completion metadata, partial files, invalid checksums, and absent trial results all mean an incomplete experiment; evaluation must refuse it. If an abrupt failure prevents a descriptor from being written, leave the run incomplete rather than fabricating a successful record.
 
-Do not overwrite a descriptor or development-history artifact. Final evaluation adds its own completion record and outputs to the same run without changing development history. These are terminal-history contracts, not authorization for automatic crash recovery or resuming partial artifacts.
+Do not overwrite a descriptor or development-history artifact. Final evaluation adds its own completion record and outputs to the same run without changing the development history. These are terminal-history contracts, not authorization for automatic crash recovery or resuming partial artifacts.
 
 ### Prediction Records
 
 Use sentence-level UTF-8 JSONL under the same strict JSON, schema-version, checksum, and type-validation rules as dataset records. Each prediction object has exactly these fields:
 
-| Fields | Type and meaning |
-|---|---|
-| `schema_version`, `run_id` | Integer `1` and the output run's identifier. |
-| `model_ref` | Object containing exactly `candidate_id`, `model_sha256`, and `metadata_sha256`, identifying the generating bundle. |
-| `sentence_id`, `source_path`, `source_sha256`, `sentence_ordinal` | Source identity and positive sentence ordinal, following the dataset conventions and raw-input exception below. |
-| `source_role` | String `val_gold`, `test_gold`, or `raw`. |
-| `token_ids`, `original_forms`, `normalized_forms`, `token_spans` | Nonempty, aligned arrays following the dataset definitions for IDs, case-preserving normalization, and original-source offsets. |
-| `predicted_labels` | Aligned array of labels in the generating bundle's target inventory. |
-| `token_confidences` | Aligned array of finite probabilities in `[0, 1]`, each the marginal of the actual Viterbi-predicted label. |
+| Fields                                                            | Type and meaning                                                                                                                |
+|-------------------------------------------------------------------|---------------------------------------------------------------------------------------------------------------------------------|
+| `schema_version`, `run_id`                                        | Integer `1` and the output run's identifier.                                                                                    |
+| `model_ref`                                                       | Object containing exactly `candidate_id`, `model_sha256`, and `metadata_sha256`, identifying the generating bundle.             |
+| `sentence_id`, `source_path`, `source_sha256`, `sentence_ordinal` | Source identity and positive sentence ordinal, following the dataset conventions and raw-input exception below.                 |
+| `source_role`                                                     | String `val_gold`, `test_gold`, or `raw`.                                                                                       |
+| `token_ids`, `original_forms`, `normalized_forms`, `token_spans`  | Nonempty, aligned arrays following the dataset definitions for IDs, case-preserving normalization, and original-source offsets. |
+| `predicted_labels`                                                | Aligned array of labels in the generating bundle's target inventory.                                                            |
+| `token_confidences`                                               | Aligned array of finite probabilities in `[0, 1]`, each the marginal of the actual Viterbi-predicted label.                     |
 
 Prediction objects contain no gold target labels or original UPOS annotations. Require the same token identities, forms, order, and lengths as their evaluation inputs, without retokenizing gold. Preserve full-precision probabilities; reject missing, extra, duplicate, or misaligned sentence/token predictions. Test predictions remain restricted to final evaluation.
 
-Standalone input uses `source_role: raw`. Record its repository-relative POSIX path when inside the repository and its resolved absolute POSIX path otherwise. Apply the sentence-ID formula with `raw` and that recorded path. This exception permits standalone inference on external text files without making them eligible literature inputs for self-training. Use the recorded model's raw-text preprocessing and assign consecutive token IDs from `1`; preserve original-source token spans and sentence ordinals before sentence filtering.
+Standalone input uses `source_role: raw`. Record its repository-relative POSIX path when inside the repository and its resolved absolute POSIX path otherwise. Apply the sentence-ID formula with `raw` and that recorded path. This exception permits standalone inference on external text files without making them eligible for literature inputs for self-training. Use the recorded model's raw-text preprocessing and assign consecutive token IDs from `1`; preserve original-source token spans and sentence ordinals before sentence filtering.
 
 Confidence acceptance, contamination exclusion, deduplication, known-multiword-token exclusion, and pseudo-label sampling caps apply to pseudo-label selection only. Standalone inference returns repeated and low-confidence sentences, preserving their predictions and confidences. Its filtering is limited to the shared decoding, segmentation, whitespace, and resource rules; no confidence threshold or training-corpus overlap filter may silently remove inference results. Known multiword-token compatibility limitations still apply and must be reported.
 
@@ -401,15 +401,15 @@ Confidence acceptance, contamination exclusion, deduplication, known-multiword-t
 
 Metric JSON has exactly `schema_version` (integer `1`), `run_id`, `split` (`val_gold` or `test_gold`), `target_inventory` (alphabetically ordered label array), and `models` (mapping described below). Each model entry has exactly these fields:
 
-| Field | Type and meaning |
-|---|---|
-| `model_ref` | The generating candidate's three-field model reference. |
-| `sentence_count`, `token_count` | Positive integer evaluation counts. |
-| `correct_token_count` | Nonnegative integer no greater than `token_count`. |
-| `accuracy`, `macro_f1` | Finite numbers in `[0, 1]` using the Evaluation Contract. |
-| `per_tag` | Mapping with exactly one entry per target label; each entry contains exactly `precision`, `recall`, `f1` (finite values in `[0, 1]`) and `support` (nonnegative integer gold token count). |
-| `confusion_matrix` | Square array of nonnegative integer counts, with gold rows and predicted columns in `target_inventory` order. |
-| `oov`, `non_punctuation` | Objects containing exactly `token_count`, `correct_token_count`, and `accuracy`; counts are nonnegative integers with correct count no greater than token count. |
+| Field                           | Type and meaning                                                                                                                                                                           |
+|---------------------------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `model_ref`                     | The generating candidate's three-field model reference.                                                                                                                                    |
+| `sentence_count`, `token_count` | Positive integer evaluation counts.                                                                                                                                                        |
+| `correct_token_count`           | Nonnegative integer no greater than `token_count`.                                                                                                                                         |
+| `accuracy`, `macro_f1`          | Finite numbers in `[0, 1]` using the Evaluation Contract.                                                                                                                                  |
+| `per_tag`                       | Mapping with exactly one entry per target label; each entry contains exactly `precision`, `recall`, `f1` (finite values in `[0, 1]`) and `support` (nonnegative integer gold token count). |
+| `confusion_matrix`              | Square array of nonnegative integer counts, with gold rows and predicted columns in `target_inventory` order.                                                                              |
+| `oov`, `non_punctuation`        | Objects containing exactly `token_count`, `correct_token_count`, and `accuracy`; counts are nonnegative integers with correct count no greater than token count.                           |
 
 Require `accuracy = correct_token_count / token_count`, matrix totals equal token count, matrix trace equal correct count, row sums equal per-tag support, and macro-F1 equal the full-inventory mean of per-tag F1. Validate precision, recall, and F1 against the same confusion counts with the specified zero-division behavior. Diagnostic accuracy is the corresponding correct/total ratio, or `null` with both counts zero for an empty subset. All compared models use the same evaluation identities, target inventory, OOV mask, and gold-derived punctuation mask. Numeric comparisons must allow serialization-level floating-point error rather than comparing formatted display percentages.
 
@@ -419,13 +419,13 @@ Store each successful development trial's metric report at `reports/<run_id>/val
 
 Create new outputs under `reports/<run_id>/evaluation/`:
 
-| File | Contents |
-|---|---|
-| `gate.jsonl`, `final.jsonl`, `gold_control.jsonl` | Test prediction records for the three frozen roles, in identical gold sentence/token order. |
-| `metrics.json` | Metric record with `split: test_gold` and exactly `gate`, `final`, and `gold_control` as `models` keys. |
-| `comparison.json` | Accuracy differences and primary paired-bootstrap result defined below. |
-| `units.jsonl` | Ordered, label-free resampling-unit membership records defined below. |
-| `completion.json` | Immutable evaluation outcome and integrity links defined below. |
+| File                                              | Contents                                                                                                |
+|---------------------------------------------------|---------------------------------------------------------------------------------------------------------|
+| `gate.jsonl`, `final.jsonl`, `gold_control.jsonl` | Test prediction records for the three frozen roles, in identical gold sentence/token order.             |
+| `metrics.json`                                    | Metric record with `split: test_gold` and exactly `gate`, `final`, and `gold_control` as `models` keys. |
+| `comparison.json`                                 | Accuracy differences and primary paired-bootstrap result defined below.                                 |
+| `units.jsonl`                                     | Ordered, label-free resampling-unit membership records defined below.                                   |
+| `completion.json`                                 | Immutable evaluation outcome and integrity links defined below.                                         |
 
 The comparison object has exactly `schema_version` (integer `1`), `run_id`, `split` (`test_gold`), `final_minus_gate_pp`, `final_minus_gold_control_pp`, and `bootstrap`. Both differences are finite signed percentage-point values calculated from unrounded accuracies. The bootstrap object has exactly `unit_type` (`document` or `sentence`), `unit_count` (nonnegative integer), `resamples` (positive integer), `seed` (nonnegative integer), `method` (`percentile`), `percentile_interpolation` (`linear`), `lower_pp`, `upper_pp`, and `unavailable_reason`.
 
@@ -437,7 +437,7 @@ Initialize NumPy `Generator(PCG64(seed))` with the frozen bootstrap seed. For ea
 
 Evaluation completion has exactly `schema_version` (integer `1`), `run_id`, `status` (`complete` or `failed`), `started_at`, `finished_at`, `development_sha256`, `selected_sha256`, `outputs`, `environment`, `peak_rss_mib`, and `error`. Timestamp, peak-memory, and error definitions follow the development descriptor. `development_sha256` identifies the exact development `run.json`; require it and the selected-file checksum to match a valid frozen experiment. The `outputs` mapping associates filenames from the six prediction/metric/comparison/unit files above with their exact byte checksums. A complete result requires all six entries; a failed result may identify only files that were fully written and validated.
 
-The `environment` object contains exactly `python_version`, `unicode_version`, `dependency_versions`, `source_revision`, and `source_dirty`, following development-record types. Record the actual evaluation environment and observed peak memory. Validate compatibility against frozen model metadata before prediction. Do not replace development environment observations with evaluation observations.
+The `environment` object contains exactly `python_version`, `unicode_version`, `dependency_versions`, `source_revision`, and `source_dirty`, following development-record types. Record the actual evaluation environment and observe peak memory. Validate compatibility against frozen model metadata before prediction. Do not replace development environment observations with evaluation observations.
 
 Publish completion only after the outcome and linked outputs are finalized and validated. A successful record has `error: null`; a failed record has an error object and cannot authorize cached success. Return cached final results only when successful completion, linked frozen history, model references, output checksums, alignments, and metric consistency all validate. Missing, partial, or failed evaluation remains incomplete; never overwrite it or rerun it automatically under the same completed-result identity.
 
@@ -474,47 +474,95 @@ Before producing artifacts, configure `.gitignore` to exclude generated datasets
 
 Run the following separate checks from the repository root when implementing executable behavior or configuration:
 
-| Check | Command |
-|---|---|
-| Lint | `uv run ruff check .` |
+| Check      | Command                        |
+|------------|--------------------------------|
+| Lint       | `uv run ruff check .`          |
 | Formatting | `uv run ruff format --check .` |
-| Types | `uv run mypy src/crf/` |
-| Tests | `uv run pytest tests/ -v` |
+| Types      | `uv run mypy src/crf/`         |
+| Tests      | `uv run pytest tests/ -v`      |
 
 Record each check's actual result. Runtime compatibility and the package migration are not complete until applicable verification has been performed. Documentation-only changes are verified by inspection under `AGENTS.md` and do not establish that these executable checks have passed.
+
+### PyCharm Integration Decision (2026-10-28)
+
+PyCharm uses the existing project-local environment as a native uv SDK; it must
+not create an independent environment or change dependency authority. During
+setup, the enabled pyproject module model regenerated module roots relative to
+`.idea` and discarded explicit roots/exclusions. Disable `usePyprojectToml` for
+that IDE module model and maintain the explicit repository/source/test roots.
+This affects IDE module generation only; `pyproject.toml`, `.python-version`,
+and `uv.lock` remain authoritative for packaging, runtime and tooling. The
+module inherits the project uv interpreter. See [PyCharm setup](PYCHARM.md).
 
 ### CLI & Configuration Contract
 
 Entry points use `argparse`, run from the repository root, and delegate reusable logic to `crf` under `src/crf/`. The following are target commands to implement, not claims that the scripts already exist:
 
-| Command | Behavior |
-|---|---|
-| `uv run python scripts/run_pipeline.py develop --config config/pipeline.yaml --seed 42` | Create a new experiment, run Stages 1–3 under the approved search, and freeze the selected models and effective configuration after successful development. |
-| `uv run python scripts/run_pipeline.py evaluate --run-id <id> --seed 42` | Load a successfully frozen experiment and perform Stage 4 without training or selection changes. |
-| `uv run python scripts/predict.py --model <bundle> --input <text.txt>` | Load one candidate bundle directory, apply its recorded raw-text preprocessing and target mapping, and write predictions to a fresh `reports/<run_id>/` directory. |
+| Command                                                                                 | Behavior                                                                                                                                                           |
+|-----------------------------------------------------------------------------------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `uv run python scripts/run_pipeline.py develop --config config/pipeline.yaml --seed 42` | Create a new experiment, run Stages 1–3 under the approved search, and freeze the selected models and effective configuration after successful development.        |
+| `uv run python scripts/run_pipeline.py evaluate --run-id <id> --seed 42`                | Load a successfully frozen experiment and perform Stage 4 without training or selection changes.                                                                   |
+| `uv run python scripts/predict.py --model <bundle> --input <text.txt>`                  | Load one candidate bundle directory, apply its recorded raw-text preprocessing and target mapping, and write predictions to a fresh `reports/<run_id>/` directory. |
 
 Development may access held-out test surface text only through the separate contamination-audit interface. Input-identity recording may read original test-file bytes to calculate checksums and sizes; this operation treats all content as opaque bytes and exposes no annotation values. The text-only audit may decode the file and use IDs, forms, surface-text comments, and spacing metadata for reconstruction, but must leave `LEMMA`, `UPOS`, `XPOS`, `FEATS`, `HEAD`, `DEPREL`, and `DEPS` uninterpreted. Its interface exposes only permitted surface text, reconstruction metadata, and identifiers. Neither path may construct or expose held-out target labels to model code. Development must not load test targets into training/evaluation records, generate test predictions, or compute test metrics. General configuration validation does not authorize parsing held-out labels. Test targets, predictions, and metrics are restricted to final evaluation. Standalone prediction is not an alternative development-time test-evaluation route.
 
 Use one UTF-8 YAML configuration format with a mapping at the root. Load plain configuration values without executable object construction. Reject duplicate keys at every nesting level. Version 1 recognizes the following keys; nested objects accept only the listed children:
 
-| Key or section | Children and defaults |
-|---|---|
-| `config_version` | Required integer `1`. |
-| `seed` | Nonnegative integer; default `42`. |
-| `tag_mapping` | Default `{}`; otherwise the complete mapping defined in Optional Target Tag Mapping. |
-| `data` | Required `train_gold`, `val_gold`, `test_gold`, and `ud_release`; `literature_dir` defaults to `data/raw/literature/`; `source_encoding` defaults to `utf-8` and applies to literature only. |
-| `preprocessing` | `normalizer_version` and `tokenizer_adapter_version`; each is an integer defaulting to `1`, identifying the initial contracts in this document. Reject unsupported versions. |
-| `features` | `schema_version`; integer default `1` for the initial Feature Dictionary Contract. Reject unsupported versions; version selection does not authorize additional features or a different context window. |
-| `training` | `c1_grid`, `c2_grid`, and `parameters`; grids default to `[0.01, 0.1, 1.0]`. The `parameters` mapping accepts exactly `max_iterations`, `num_memories`, `epsilon`, `period`, `delta`, `min_freq`, `all_possible_states`, and `all_possible_transitions`, with their documented defaults. The algorithm is `lbfgs`; the pipeline seed remains top-level `seed`, not an estimator parameter. |
-| `self_training` | `thresholds` defaults to `[0.90, 0.95, 0.98]`; `pseudo_to_gold_ratio` defaults to `1.0`. |
-| `resources` | `read_buffer_bytes: 65536`, `max_paragraph_chars: 65536`, `max_sentence_chars: 16384`, `max_sentence_tokens: 256`, `batch_tokens: 4096`, and `memory_budget_mib: 8192`. |
-| `evaluation` | `bootstrap_resamples: 2000` and `bootstrap_seed: 42`. Metric definitions and resampling-unit selection follow the Evaluation Contract. |
+| Key or section   | Children and defaults                                                                                                                                                                                                                                                                                                                                                                      |
+|------------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `config_version` | Required integer `1`.                                                                                                                                                                                                                                                                                                                                                                      |
+| `seed`           | Nonnegative integer; default `42`.                                                                                                                                                                                                                                                                                                                                                         |
+| `tag_mapping`    | Default `{}`; otherwise the complete mapping defined in Optional Target Tag Mapping.                                                                                                                                                                                                                                                                                                       |
+| `data`           | Required `train_gold`, `val_gold`, `test_gold`, and `ud_release`; `literature_dir` defaults to `data/raw/literature/`; `source_encoding` defaults to `utf-8` and applies to literature only.                                                                                                                                                                                               |
+| `preprocessing`  | `normalizer_version` and `tokenizer_adapter_version`; each is an integer defaulting to `1`, identifying the initial contracts in this document. Reject unsupported versions.                                                                                                                                                                                                               |
+| `features`       | `schema_version`; integer default `1` for the initial Feature Dictionary Contract. Reject unsupported versions; version selection does not authorize additional features or a different context window.                                                                                                                                                                                    |
+| `training`       | `c1_grid`, `c2_grid`, and `parameters`; grids default to `[0.01, 0.1, 1.0]`. The `parameters` mapping accepts exactly `max_iterations`, `num_memories`, `epsilon`, `period`, `delta`, `min_freq`, `all_possible_states`, and `all_possible_transitions`, with their documented defaults. The algorithm is `lbfgs`; the pipeline seed remains top-level `seed`, not an estimator parameter. |
+| `self_training`  | `thresholds` defaults to `[0.90, 0.95, 0.98]`; `pseudo_to_gold_ratio` defaults to `1.0`.                                                                                                                                                                                                                                                                                                   |
+| `resources`      | `read_buffer_bytes: 65536`, `max_paragraph_chars: 65536`, `max_sentence_chars: 16384`, `max_sentence_tokens: 256`, `batch_tokens: 4096`, and `memory_budget_mib: 8192`.                                                                                                                                                                                                                    |
+| `evaluation`     | `bootstrap_resamples: 2000` and `bootstrap_seed: 42`. Metric definitions and resampling-unit selection follow the Evaluation Contract.                                                                                                                                                                                                                                                     |
 
 Required data paths and the release identifier have no inferred substitutes. Optional sections and values receive the documented defaults. Resolve relative paths, including CLI paths, against the repository root rather than the configuration file's directory. Require the three gold split paths to resolve to distinct physical files. Preserve the gold and literature folder restrictions and all resolved-path/output checks defined elsewhere in this document.
 
 Reject unknown keys, incorrect types, nonfinite numeric values, empty required strings or grids, and duplicate grid/threshold entries. Booleans are not valid integers or numeric hyperparameters. Require positive integer resource limits, `batch_tokens >= max_sentence_tokens`, nonnegative finite regularization values and sampling ratio, and finite thresholds in `[0, 1]`. Validate CRF stopping parameters against their estimator-supported domains and require a positive integer bootstrap resample count and nonnegative integer seeds. The approved default experiment remains 36 candidate configurations with the documented fixed training/evaluation settings; any intentional change must be declared before selection and recorded as a separate experiment under the existing experiment-boundary rules.
 
 For development, apply precedence in this order: documented defaults, YAML values, then an explicitly supplied `--seed`. An omitted CLI seed does not overwrite the configured seed. Record the complete effective configuration automatically. The pipeline seed controls applicable training/sampling operations; the bootstrap uses the separately recorded `evaluation.bootstrap_seed`.
+
+#### Configuration validation implementation decisions (2026-10-28)
+
+`crf.utils.config.load_config(path, repository_root=..., seed=None)` resolves the
+configuration path against the explicitly supplied repository root. Immutable
+records retain repository-relative `Path` values for corpus locations;
+`to_dict()` emits all effective fields with POSIX path strings and numeric grids
+as arrays. Numeric-valued settings accept integers or floats (never booleans)
+and normalize to floats; integer-valued settings require integers. YAML merge
+keys, recursive aliases, non-string mapping keys, and non-plain values are
+rejected along with duplicates and unknown fields. Harmless nonrecursive aliases
+are allowed. Only schema/preprocessing/feature version 1 is currently supported;
+this does not assert that later preprocessing milestones are implemented.
+
+CRF domain interpretation: `max_iterations` is nonnegative (zero means no
+iteration limit in CRFsuite), `num_memories` and `period` are positive integers,
+`epsilon`, `delta`, and `min_freq` are finite nonnegative numbers, and feature
+expansion switches are booleans. Explicit overrides define a separate experiment;
+the defaults still describe the approved 36 configurations. Source encodings
+must resolve to a Python text codec supporting incremental decoding.
+
+Configuration loading checks gold file existence, `.conllu` suffix, containment
+under the repository's `data/raw/gold/`, and distinct device/inode identities
+(including hard links). The literature directory must be the prescribed
+`data/raw/literature/`, must exist, and must not traverse symlinks. Gold and
+literature roots must resolve inside the repository and remain disjoint.
+Eligibility discovery and content checks remain milestone 4. No labels are read.
+`parse_config()` validates settings and path syntax without requiring input files;
+it supports standalone model metadata whose original corpora may be absent.
+Development must use `load_config()` or explicitly call `validate_input_paths()`.
+
+`resolve_cli_path()` provides repository-relative CLI resolution while allowing
+external standalone inputs. `validate_output_path()` checks a proposed fresh
+output under `data/interim/`, `data/processed/`, `models/`, or `reports/`, rejecting
+existing entries (including dangling symlinks), symlinked output ancestors,
+resolved escapes, and raw-input locations. It performs no allocation; race-safe
+unique allocation and publication remain the next foundation tasks.
 
 Freeze effective configuration, input identities, dataset identities, preprocessing versions, selected model references, and evaluation settings only after every planned configuration has a successful fitted or permitted reused result. Evaluation accepts no new configuration or parameter overrides. Its `--seed`, when supplied, is an assertion that must equal the frozen bootstrap seed; when omitted, use that frozen seed. Reject an incomplete experiment, changed inputs, incompatible preprocessing/dependencies, or a model/checksum mismatch before computing test predictions. If evaluation already completed, verify and return the stored results without recomputing them. Never overwrite partial or completed evaluation artifacts or present a failed attempt as complete.
 
@@ -528,12 +576,12 @@ Changing literature inputs is supported by starting a new development run, with 
 * **Shared normalization and preservation:** Use one versioned normalizer for gold feature forms, literature preprocessing, raw inference, and contamination checks. Transform working copies only; preserve original files, forms, and alignment to decoded source offsets. Record the normalizer version and Python Unicode database version with each run.
 * **Transformation order:** For raw text, remove an optional BOM (`U+FEFF`) only at file start and normalize CRLF/CR line endings to LF. Apply Unicode NFC normalization, then the apostrophe mappings below. Map nonbreaking space (`U+00A0`) and narrow nonbreaking space (`U+202F`) to ordinary space (`U+0020`). Preserve line breaks for paragraph segmentation. Apply the same character normalization to individual gold token forms without changing gold token boundaries. NFC provides canonical normalization; it does not replace the explicit apostrophe mapping. See [Unicode normalization](https://www.unicode.org/reports/tr15/).
 
-| Input apostrophe | Normalized output |
-|---|---|
-| `U+0027` — apostrophe | `U+0027` |
-| `U+2019` — right single quotation mark | `U+0027` |
-| `U+0060` — grave accent | `U+0027` |
-| `U+02BC` — modifier letter apostrophe | `U+0027` |
+| Input apostrophe                       | Normalized output |
+|----------------------------------------|-------------------|
+| `U+0027` — apostrophe                  | `U+0027`          |
+| `U+2019` — right single quotation mark | `U+0027`          |
+| `U+0060` — grave accent                | `U+0027`          |
+| `U+02BC` — modifier letter apostrophe  | `U+0027`          |
 
 * **Cyrillic preservation:** Preserve Ukrainian letter distinctions, including `г/ґ`, `и/і`, `е/є`, and `і/ї`, and preserve the soft sign. Do not transliterate or replace Latin/Cyrillic lookalikes. Do not silently strip combining stress marks, soft hyphens, or zero-width characters; retain them and report occurrences of formatting characters.
 * **Casing before lexical lowercasing:** Compute `is_title`, `is_uppercase`, and `is_lowercase` on the normalized, case-preserving token using Python's Unicode-aware `istitle()`, `isupper()`, and `islower()`. These flags are independent. Then derive the lexical feature form by lowercasing and applying NFC again. Do not lowercase text before sentence segmentation. For example, `ҐАНОК` keeps its uppercase flag while its lexical feature form becomes `ґанок`. See [Python string operations](https://docs.python.org/3/library/stdtypes.html).
@@ -544,16 +592,16 @@ The extractor accepts an ordered sentence of surface forms and returns one featu
 
 Current-token features are:
 
-| Key | Type | Meaning |
-|---|---|---|
-| `bias` | float | Always `1.0` |
-| `word.lower` | string | Lexical form from the normalization contract |
-| `prefix.1` through `prefix.4` | string | First 1–4 characters of the lexical form |
-| `suffix.1` through `suffix.5` | string | Last 1–5 characters of the lexical form |
-| `is_title`, `is_uppercase`, `is_lowercase` | boolean | Case-preserving definitions from the normalization contract |
-| `has_hyphen` | boolean | Contains `U+002D`, `U+2010`, or `U+2011` |
-| `has_digits` | boolean | Any character satisfies Python's `isdigit()` |
-| `is_punct` | boolean | Every character belongs to a Unicode punctuation category (`P*`) |
+| Key                                        | Type    | Meaning                                                          |
+|--------------------------------------------|---------|------------------------------------------------------------------|
+| `bias`                                     | float   | Always `1.0`                                                     |
+| `word.lower`                               | string  | Lexical form from the normalization contract                     |
+| `prefix.1` through `prefix.4`              | string  | First 1–4 characters of the lexical form                         |
+| `suffix.1` through `suffix.5`              | string  | Last 1–5 characters of the lexical form                          |
+| `is_title`, `is_uppercase`, `is_lowercase` | boolean | Case-preserving definitions from the normalization contract      |
+| `has_hyphen`                               | boolean | Contains `U+002D`, `U+2010`, or `U+2011`                         |
+| `has_digits`                               | boolean | Any character satisfies Python's `isdigit()`                     |
+| `is_punct`                                 | boolean | Every character belongs to a Unicode punctuation category (`P*`) |
 
 Affix lengths count Unicode code points after lexical normalization. Emit an affix only when the token has at least that many code points; do not pad or repeat shortened slices. For example, `гідність` yields `suffix.5 = "ність"`. Affixes are surface heuristics, not morphological analyses or agreement constraints.
 
