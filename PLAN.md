@@ -6,7 +6,7 @@ See [AGENTS.md](AGENTS.md) for operating procedures and [docs/ARCH.md](docs/ARCH
 
 Implement a reproducible Ukrainian CRF self-training pipeline with isolated development and final evaluation, usable raw-text inference, and validated run artifacts. Preserve the approved experiment design and original datasets.
 
-Milestone 1 is implemented: the locked CPython 3.14 environment and installable `src/crf/` foundations replace the incompatible `postag/` experiments. Milestone 2 task 1 is implemented; the remaining later tasks are unchecked. The tokenizer backend and surface features do not establish a complete preprocessing or training pipeline.
+Milestone 1 is implemented: the locked CPython 3.14 environment and installable `src/crf/` foundations replace the incompatible `postag/` experiments. Milestone 2 tasks 1–2 are implemented; the remaining later tasks are unchecked. The tokenizer backend and surface features do not establish a complete preprocessing or training pipeline.
 
 Gold-corpus availability, release identity, and compatibility checks are pending. Small deterministic fixtures support implementation and offline verification without production data. Full corpus runs have a separate readiness gate below; missing inputs must not be replaced with another split or fabricated data. No sprint duration or delivery estimate is assumed.
 
@@ -51,7 +51,7 @@ PyCharm follow-up verification: parsed all project XML, resolved source/test roo
 Prerequisite: milestone 1. Architecture: [Artifact & Run Contracts](docs/ARCH.md) and [CLI & Configuration Contract](docs/ARCH.md).
 
 - [x] Implement strict YAML configuration validation, documented defaults, seed precedence, version checks, and repository-relative path resolution. Acceptance: invalid/duplicate/unknown fields and incompatible settings fail explicitly; gold split aliases and source/output path violations are rejected.
-- [ ] Implement typed sentence records, JSON/JSONL validators, canonical configuration hashing, deterministic sentence identities, and automatic input identities. Acceptance: exact schema fields, types, checksums, alignment, and nullability are enforced without exposing labels to feature code.
+- [x] Implement typed sentence records, JSON/JSONL validators, canonical configuration hashing, deterministic sentence identities, and automatic input identities. Acceptance: exact schema fields, types, checksums, alignment, and nullability are enforced without exposing labels to feature code.
 - [ ] Implement unique output allocation, publish-once completion handling, logging, and aggregate RSS monitoring. Acceptance: existing artifacts and raw inputs cannot be overwritten, diagnostics remain on stderr, budget violations fail, and incomplete runs cannot be treated as successful.
 
 Milestone 2 task 1 verification (2026-10-28): 88 new deterministic configuration/path tests pass; all 108 repository tests and strict core types (9 source files) pass. Changed-code Ruff lint and formatting pass. Full repository lint/format retain only the unchanged `scripts/fetch_dictionary.py` failures, reproduced before implementation (I001 and required formatting); this is the permitted pre-existing-failure exception. No checks were weakened, no production inputs were read, and no pipeline artifacts were generated. Unique output allocation, content auditing, artifact schemas/hashes, and future pipeline CLIs remain unchecked subsequent tasks.
@@ -69,6 +69,21 @@ Milestone 2 task 1 verification (2026-10-28): 88 new deterministic configuration
 - Path checks resolve relative CLI/config/data paths from the explicit repository root. Gold files must exist, remain under gold, and have distinct device/inode identities; literature uses its prescribed directory without symlinks. Validation reads no annotation contents. Metadata-only parsing does not require original files.
 - Output checks are read-only and reject existing/dangling entries, symlink ancestors, raw destinations, and artifact-tree escapes. Atomic allocation/publication, corpus discovery/content auditing, hashing and artifact schemas remain subsequent tasks.
 - Tests will use temporary repositories and opaque gold-file bytes, exercise all sections and defaults/overrides, malformed YAML and nested duplicates, hard/symbolic aliases, missing/escaping sources, and fresh versus existing/redirected output paths. No production input or generated artifact is touched.
+
+Milestone 2 task 2 verification (2026-10-28): 119 new offline serialization/identity/record tests pass; the full suite passes 227 tests, and strict mypy passes all 12 core files. Changed-code Ruff lint and formatting pass. Repository-wide Ruff lint/format still fail only on unchanged `scripts/fetch_dictionary.py` (I001/formatting), reproduced before implementation; this is the permitted pre-existing-failure exception. All checks use `uv`; no checks were weakened. Tests cover opaque undecodable gold bytes, exact Unicode JSON/hash encodings, strict nested schemas, confidence endpoints/full precision, mapped inventories, global spans/null spans, test-label opt-in, source changes, and path/source isolation. Production sources and existing outputs were untouched; the unrelated `AD main.py` state remains unchanged. Fingerprint/model-content verification and shared-normalizer semantics remain later-stage requirements, as documented in the architecture; output allocation/publication remains milestone 2 task 3.
+
+#### Milestone 2, task 2 execution steps (2026-10-28)
+
+1. Define strict JSON helpers, immutable dataset/input records, and validation context; document the boundary with later loaders, normalization, and artifact publication.
+2. Implement canonical configuration bytes/checksums, provenance-derived sentence identities, bounded opaque-byte input hashing, and strict streaming record validation.
+3. Review requirements and failure boundaries before writing tests; verify deterministic fixtures, full checks, and preservation of raw inputs and existing artifacts.
+
+#### Milestone 2, task 2 specification review before tests
+
+- Strict JSON helpers reject nested duplicate keys, nonfinite literals/overflow, BOMs, invalid Unicode, non-plain encoding inputs, blank JSONL records, and non-LF line endings. JSONL iteration validates one object at a time with path/line diagnostics; encoding helpers return bytes without publishing files.
+- Sentence factories enforce exact top-level/nested fields, schema version 1, strict integer/probability types, nonempty aligned arrays, consecutive IDs, ordered bounded spans (requiring decoded-source length), gold/pseudo nullability, original UD inventory, configured target mapping/inventory, input bindings, provenance IDs, minimum confidence, and seed-derived priority. Test-label records require explicit final evaluation. Immutable tuples preserve alignment; features receive forms only.
+- Canonical effective-config hashing uses complete settings and the exact sorted compact UTF-8 JSON encoding without newline. Sentence IDs use the specified ordered provenance array. File checksums/size use original bounded byte reads and observed-change detection; identity verification rehashes current sources. Input discovery is flat and deterministic, rejects symlinks/gold aliases and empty literature, and does not interpret annotations.
+- Deterministic tests will independently derive hash expectations, round-trip gold/pseudo/input records, mutate schema/types/alignments/nullability/provenance/spans, exercise strict JSON failure diagnostics and incremental reading, and verify source order, opaque test bytes, path failures and changed-byte rejection. Fingerprint/model-content and linguistic normalization verification remain with their later owning stages; no production data, model artifact, or output publication is needed.
 
 ### 3. Implement Gold Parsing, Target Mapping, and Features
 
@@ -145,8 +160,8 @@ Update this table with the actual command result, date, and relevant evidence du
 |---|---|---|
 | Lint | `uv run ruff check .` | Failed: unchanged `scripts/fetch_dictionary.py` I001; changed-code lint passed |
 | Formatting | `uv run ruff format --check .` | Failed: unchanged `scripts/fetch_dictionary.py` requires formatting; changed-code formatting passed |
-| Types | `uv run mypy src/crf/` | Passed (2026-10-28): 9 source files |
-| Tests | `uv run pytest tests/ -v` | Passed (2026-10-28): 108 tests, including 88 configuration/path tests and one offline integration test |
+| Types | `uv run mypy src/crf/` | Passed (2026-10-28): 12 source files |
+| Tests | `uv run pytest tests/ -v` | Passed (2026-10-28): 227 tests, including 88 configuration/path tests, 119 serialization/identity/record tests, and one offline integration test |
 
 ## Open Dependencies and Blockers
 

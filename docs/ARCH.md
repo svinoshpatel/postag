@@ -278,6 +278,46 @@ All token-aligned arrays have the same nonzero length, including `original_upos`
 
 Create `test_gold` dataset records only during final evaluation. The earlier contamination audit uses its separate text-and-identifier interface without constructing records containing held-out labels. This dataset schema covers gold and pseudo-label training/evaluation inputs; standalone prediction outputs follow the separate prediction contract.
 
+#### Dataset and identity validation boundary (2026-10-28)
+
+Milestone 2 provides immutable `SentenceRecord`, `PseudoMetadata`, and
+`InputIdentity` records through validated parsing factories. Dataset validation
+requires the effective configuration and a matching input identity. If any token
+span is non-null, callers must also provide the original decoded source length;
+validation never guesses that length from sentence text or annotation rows.
+Null spans remain valid when offsets are unavailable. Token IDs must equal
+`1..N`; spans are ordered and disjoint across null entries too. Features receive
+only the record's `feature_forms` tuple, never the record or its label/provenance
+fields. Gold test records require an explicit final-evaluation opt-in; opaque
+input hashing does not enable that opt-in or parse annotations.
+
+These foundation validators enforce schema, label inventory/mapping consistency,
+input bindings, sentence IDs, and seed-derived pseudo sampling priorities. They
+validate fingerprint and gate checksums as SHA-256 strings; verification against
+normalized source text and an actual model bundle belongs to the later
+contamination/model-loading stages. Normalized forms are checked for type and
+alignment here; their linguistic transformation is verified by the shared
+normalizer in milestone 3. Original CoNLL-U comments/reconstruction metadata
+remain the loader's separate provenance responsibility.
+
+JSON readers reject duplicate keys at every depth, nonfinite values (including
+overflowing exponents), BOMs, and invalid Unicode. JSONL reads one object at a
+time, rejects blank lines and CRLF, and reports the path and physical line.
+A complete final JSON object without a trailing LF is accepted on input;
+encoded JSONL records always end in LF. Writers here return encoded bytes and
+do not open or publish output files. Run allocation and atomic completion remain
+the third foundation task; model/trial/metric schemas remain their later tasks.
+
+Input identities are computed automatically in gold-role order followed by flat,
+filename-sorted eligible literature files. Identity discovery validates source
+paths and symlinks, excludes directories and non-`.txt` entries, rejects physical
+gold aliases, and fails on an empty literature set. It reads original sources in
+bounded binary chunks only, including test files as opaque bytes. Hashing checks
+file metadata before/after reading and rejects observed changes; this is a
+best-effort consistency check, not a filesystem snapshot. Content overlap and
+known-source auditing remain milestone 4. Checksums describe exact original
+bytes; an explicit verification helper checks a recorded identity against disk.
+
 ### Model Bundles
 
 Serialize each successfully fitted estimator as `model.joblib` and store `metadata.json` beside it. The sidecar has exactly these required fields:
