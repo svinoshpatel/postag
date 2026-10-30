@@ -121,6 +121,16 @@ Character limits count decoded Unicode code points before normalization. The sen
 
 The tokenizer adapter's compatibility with the selected gold release must be verified when the gold files are available; package selection alone does not establish compatibility.
 
+#### Raw reader and adapter boundaries
+
+The reusable reader emits immutable, label-free raw sentences, not pseudo-labeled `SentenceRecord` objects; targets and confidence metadata are added only after inference. The same paragraph adapter is usable without literature discovery for standalone inference. Discovery validates gold paths/physical identities to reject aliases but never opens gold contents. Content-based gold-export detection belongs to the separate contamination audit.
+
+Adapter version 1 uses the pinned non-legacy `uk_two` sentence rules before adapting word spans. Preserve all nonwhitespace source content, including formatting characters omitted by the upstream word API; recover forms from aligned source slices rather than upstream canonicalized strings. Split punctuation individually and compound hyphens (`-`, U+2010, U+2011); preserve apostrophes between letters (including preceding combining stress marks) and numeric internal decimal/date/time separators (`.`, `,`, `:` between digits). Group ASCII digits separated by ordinary spaces into thousands groups (one to three leading digits followed by groups of three, with an optional decimal fraction); normalization admits NBSP variants. These bounded rules are not a full UD tokenizer for URLs, unusual numeric notation or MWT expansions. No gold boundaries are changed.
+
+Paragraphs comprise nonblank physical lines with their original intervening line endings; blank lines contain only Unicode whitespace (an optional file-start BOM is ignored for blankness). A paragraph excludes its final line terminator and delimiter lines. CRLF is one line terminator but two original code points. Limits count the retained original paragraph/sentence span before normalization; rejected paragraphs retain only counts while draining to their delimiter. Paragraph ordinals include oversized paragraphs; sentence ordinals count segmented nonempty candidates, including rejected sentences, across each file. An oversized paragraph has no inferred sentence count. Exclusions are yielded incrementally with reason, source offsets and text volume, so callers can aggregate diagnostics without retaining text.
+
+Exhaust source iterators before accepting a run: checksums are verified before decoding, against consumed bytes at EOF and again against the current source. A late decoding/integrity failure invalidates earlier yields. Decoded offsets index the text produced by the configured strict codec (a BOM-consuming codec, if explicitly selected, defines that decoded coordinate system). The default UTF-8 codec retains the BOM for shared normalization to handle.
+
 ### Confidence & Sequence Acceptance
 
 For a token sequence $\mathbf{x}$, let $\hat{\mathbf{y}}$ be its Viterbi-predicted label sequence and $c_i$ the marginal probability of that predicted label at position $i$:

@@ -57,7 +57,13 @@ Evidence: [M3 history](docs/HISTORY.md#milestone-3), including the permitted [li
 
 Prerequisites: milestones 2–3. Architecture: [Raw-Text Segmentation Contract](docs/ARCH.md#raw-text-segmentation-contract) and [Strict Test Data Isolation & Leakage Prevention](docs/ARCH.md).
 
-- [ ] Implement flat literature discovery, source encoding, and the versioned tokenizer/UD adapter. Acceptance: discovery never recurses or consumes gold; paragraphs and sentences survive buffer boundaries; original offsets and configured size limits are respected.
+- [x] Implement flat literature discovery, source encoding, and the versioned tokenizer/UD adapter. Acceptance: discovery never recurses or consumes gold; paragraphs and sentences survive buffer boundaries; original offsets and configured size limits are respected.
+  - [x] Share guarded flat discovery with input identities without reading gold contents.
+  - [x] Add bounded strict decoding/paragraph streaming and aligned versioned UD segmentation, with incremental exclusions and token-bounded batches.
+  - [x] Review requirements, cover offline boundaries/failures, and run focused and all required checks.
+
+  Evidence: [M4 task 1 history](docs/HISTORY.md#m4-task-1--literature-reader-and-ud-adapter). Types/tests and changed-code lint/format passed; repository lint/format retain only the unchanged `scripts/fetch_dictionary.py` failures. Full tests passed outside the sandbox after its process-enumeration restriction blocked the existing RSS smoke test. Official-corpus tokenizer compatibility remains pending.
+
 - [ ] Implement text-only gold overlap exclusion, deterministic literature deduplication, and known-source/MWT exclusions. Acceptance: automatic fingerprints and exclusion diagnostics follow the contract; held-out labels remain uninterpreted; original gold is unchanged.
 - [ ] Verify streaming and resource-failure behavior with bounded fixtures and controlled monitor inputs. Acceptance: oversized candidates are rejected intact, gold sentences are not filtered or truncated, intermediates are incremental, and inference-only filtering is distinct from pseudo-label selection.
 

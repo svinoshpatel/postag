@@ -175,7 +175,25 @@ def iter_input_identities(
     sources: list[tuple[SourceRole, Path, str]] = [
         (role, getattr(config.data, role), "utf-8") for role in GOLD_ROLES
     ]
+    for path in discover_literature_paths(config, root):
+        sources.append(("literature", path, config.data.source_encoding))
+    for role, relative, encoding in sources:
+        stub = InputIdentity(1, role, relative.as_posix(), "0" * 64, 0, encoding)
+        path = _source_path(stub, config, root)
+        digest = digest_file(path, buffer_bytes=config.resources.read_buffer_bytes)
+        yield InputIdentity(
+            1, role, relative.as_posix(), digest.sha256, digest.size_bytes, encoding
+        )
+
+
+def discover_literature_paths(
+    config: PipelineConfig, repository_root: Path
+) -> tuple[Path, ...]:
+    """Return guarded, sorted repository-relative paths without opening gold."""
+    validate_input_paths(config, repository_root)
+    root = repository_root.resolve()
     literature = root / config.data.literature_dir
+    result: list[Path] = []
     # This holds paths only, never corpus text or parsed records.
     for path in sorted(literature.iterdir(), key=lambda path: path.name):
         if path.suffix != ".txt":
@@ -183,15 +201,46 @@ def iter_input_identities(
         if path.is_symlink():
             raise ValidationError(f"Symlinked literature candidate: {path}")
         if path.is_file():
-            sources.append(
-                ("literature", path.relative_to(root), config.data.source_encoding)
+            relative = path.relative_to(root)
+            _source_path(
+                InputIdentity(
+                    1,
+                    "literature",
+                    relative.as_posix(),
+                    "0" * 64,
+                    0,
+                    config.data.source_encoding,
+                ),
+                config,
+                root,
             )
-    if len(sources) == 3:
+            result.append(relative)
+    if not result:
         raise ValidationError(f"No eligible literature files: {literature}")
-    for role, relative, encoding in sources:
-        stub = InputIdentity(1, role, relative.as_posix(), "0" * 64, 0, encoding)
+    return tuple(result)
+
+
+def iter_literature_identities(
+    config: PipelineConfig, repository_root: Path
+) -> Iterator[InputIdentity]:
+    """Hash eligible literature only; never read gold bytes or annotations."""
+    root = repository_root.resolve()
+    for relative in discover_literature_paths(config, root):
+        stub = InputIdentity(
+            1,
+            "literature",
+            relative.as_posix(),
+            "0" * 64,
+            0,
+            config.data.source_encoding,
+        )
         path = _source_path(stub, config, root)
         digest = digest_file(path, buffer_bytes=config.resources.read_buffer_bytes)
         yield InputIdentity(
-            1, role, relative.as_posix(), digest.sha256, digest.size_bytes, encoding
+            1,
+            "literature",
+            relative.as_posix(),
+            digest.sha256,
+            digest.size_bytes,
+            config.data.source_encoding,
         )

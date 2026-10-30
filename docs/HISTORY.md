@@ -43,9 +43,38 @@ Completed with offline fixtures; changed-code lint/format passed at every step, 
 
 M3 is complete for fixture-based acceptance; real-corpus readiness, the production raw-text/UD adapter and model/orchestration stages remain pending. Original inputs/artifacts and unrelated `main.py` state were preserved; no real-corpus training/evaluation is claimed.
 
+## M4 Task 1 — Literature Reader and UD Adapter
+
+**2026-10-30 — Complete for fixture-based acceptance.** Added shared flat guarded discovery and literature-only identities in `crf.data.identity`, strict incremental decoding/bounded paragraphs and sentence/exclusion events in `crf.data.literature`, and aligned versioned UD adaptation in `crf.data.segmentation`. Whole-sentence batches enforce token bounds. Existing low-level tokenizer calls and record schemas remain compatible. No raw inputs or generated artifacts are written.
+
+Pre-test specification review:
+
+- Discovery → immediate exact `.txt` regular files in filename order; shared path checks reject symlinks, escapes and physical gold aliases without opening gold. Empty/missing sources fail; directories and other suffixes are ignored. Text-content contamination remains task 2.
+- Decoding/streaming → strict configured incremental codec, bounded byte reads, CRLF preserved across chunks, blank-line paragraphs, EOF flush and no cross-file joins. Lines/paragraphs exceeding limits are counted and drained without retaining their text; delimiter whitespace is excluded from paragraph volume.
+- Alignment/UD → normalization before abbreviation-aware sentence segmentation, original absolute code-point spans and forms, case-preserving feature inputs, punctuation/hyphen/abbreviation-period separation, internal apostrophes and grouped digits retained. Backend omissions are recovered from source slices. Adapter/package/normalizer/Unicode versions are exposed as immutable metadata; run persistence belongs to orchestration.
+- Resource policy → paragraph and sentence limits use original spans, tokens are counted after adaptation, rejected candidates remain whole, diagnostics are streamed, batching preserves order and complete sentences. Gold records are never filtered or parsed here.
+- Integrity/failures → identity verified before/after decoding and consumed-byte hash checked at EOF; prior yields are provisional until exhaustion. Check invalid/truncated encoding, changed sources, unsupported versions, empty/BOM/formatting-only inputs, exact limits and one-over, buffer sizes down to one byte, CR/LF/CRLF and combining marks at boundaries, oversized recovery and bounded reads/retention.
+
+Verification on CPython 3.14.6/macOS arm64, using the existing locked environment. Every command below used `UV_CACHE_DIR=/private/tmp/postag-uv-cache` because the default cache was sandbox-inaccessible:
+
+| Check | Actual command (after the cache environment prefix) | Result |
+|---|---|---|
+| Focused | `uv run --frozen pytest tests/test_literature.py tests/test_segmentation.py -q` | Passed: 86 new cases |
+| Lint | `uv run --frozen ruff check .` | Failed: unchanged `scripts/fetch_dictionary.py` I001, reproduced before and after implementation |
+| Formatting | `uv run --frozen ruff format --check .` | Failed: unchanged `scripts/fetch_dictionary.py`; all 43 other Python files passed |
+| Types | `uv run --frozen mypy src/crf/` | Passed: 21 source files |
+| Tests | `uv run --frozen pytest tests/ -v` | Passed outside the sandbox: 680 tests |
+| Changed-code lint/format | `uv run --frozen ruff check src/crf/data/identity.py src/crf/data/segmentation.py src/crf/data/literature.py tests/test_literature.py tests/test_segmentation.py` and the same paths with `ruff format --check` | Passed: all five changed Python files |
+
+The initial sandboxed full suite had 679 passes and one failure in unchanged `test_real_process_monitor_smoke`: macOS denied psutil's `sysctl` process enumeration. The isolated smoke test passed outside the sandbox, followed by the complete 680-test suite there. No monitor code or checks were weakened. The pre-existing `AD main.py` state and failing dictionary script were untouched; scoped diffs confirm no edits to that script or the monitor/test.
+
+Tests cover one-byte reads, three newline styles, EOF, BOM/normalization alignment, three alternative source codecs, invalid/truncated bytes, whole-candidate limits/recovery, path/gold isolation, source changes, formatting omissions, stressed apostrophes, digit grouping, bounded read sizes/retention and ordered batches. Pre-test review preceded new tests; an initial mutation fixture was changed to equal-length valid text to isolate checksum failure from a legitimate earlier decoding error. Bounded-read instrumentation was restricted to the input file so backend metadata reads remained independent.
+
+Limitations: tokenizer compatibility with the official selected gold release remains a corpus-readiness gate. No production corpus was processed, no training/evaluation ran, and no run metadata was published. Contamination/deduplication/known-source/MWT policy and aggregate-monitor integration remain M4 tasks 2–3; callers must exhaust preprocessing iterators and collect their exclusion events before publishing successful outputs.
+
 ## Verification Record
 
-Latest code checks: 2026-10-29, CPython 3.14.6/macOS arm64. Historical results below were not rerun for the documentation compaction on 2026-10-30; references, task state and scoped diffs were checked.
+M1–M3 code checks: 2026-10-29, CPython 3.14.6/macOS arm64. These historical results were not rerun for the documentation compaction on 2026-10-30; references, task state and scoped diffs were checked. New code verification is recorded in [M4 task 1](#m4-task-1--literature-reader-and-ud-adapter).
 
 | Check | Command | Recorded result |
 |---|---|---|
