@@ -6,7 +6,7 @@ See [AGENTS.md](AGENTS.md) for operating procedures and [docs/ARCH.md](docs/ARCH
 
 Implement a reproducible Ukrainian CRF self-training pipeline with isolated development and final evaluation, usable raw-text inference, and validated run artifacts. Preserve the approved experiment design and original datasets.
 
-Milestone 1 is implemented: the locked CPython 3.14 environment and installable `src/crf/` foundations replace the incompatible `postag/` experiments. Milestone 2 is implemented: strict configuration, typed records and identities, safe artifact publication, logging, and resource monitoring are verified. Milestone 3 gold parsing, shared target mapping and aligned normalization are implemented; feature-contract completion remains pending. Later milestones remain unchecked. The tokenizer backend and surface features do not establish a complete preprocessing or training pipeline.
+Milestone 1 is implemented: the locked CPython 3.14 environment and installable `src/crf/` foundations replace the incompatible `postag/` experiments. Milestone 2 is implemented: strict configuration, typed records and identities, safe artifact publication, logging, and resource monitoring are verified. Milestone 3 is implemented: gold parsing, shared target mapping, aligned normalization and strict sentence-bounded features are verified with offline fixtures. Later milestones remain unchecked. These components do not establish a complete raw-text preprocessing or training pipeline.
 
 Gold-corpus availability, release identity, and compatibility checks are pending. Small deterministic fixtures support implementation and offline verification without production data. Full corpus runs have a separate readiness gate below; missing inputs must not be replaced with another split or fabricated data. No sprint duration or delivery estimate is assumed.
 
@@ -110,7 +110,7 @@ Prerequisites: milestones 1–2. Architecture: [Gold CoNLL-U Input Contract](doc
 - [x] Implement the streaming CoNLL-U loader and separate label-free audit interface. Acceptance: supplied sentence order and integer-word boundaries are preserved; multiword/empty-node rows, malformed records, final delimiters, provenance, and diagnostics follow the parser contract. Verified with 59 offline parser tests; full checks retain only the documented, unrelated `scripts/fetch_dictionary.py` lint/format failures.
 - [x] Implement optional service-tag mapping. Acceptance: original files and labels remain intact; source labels are validated first; all stages use the same configured target inventory; invalid mappings fail. Shared API verified across existing configuration/parser/record stages with 89 new offline tests; future stages must consume that API. Full checks retain only the documented unrelated lint/format failures.
 - [x] Implement the shared versioned normalizer with source alignment. Acceptance: apostrophes, Unicode normalization, casing, whitespace, and Cyrillic preservation match the architecture, with original forms retained. Verified with 73 new normalization/record tests; full checks retain only the documented unrelated lint/format failures.
-- [ ] Implement the feature dictionary schema and sentence-bounded context extraction. Acceptance: feature names/types, affix lengths, casing/shape flags, boundary flags, unseen forms, and annotation exclusion match the specification.
+- [x] Implement the feature dictionary schema and sentence-bounded context extraction. Acceptance: feature names/types, affix lengths, casing/shape flags, boundary flags, unseen forms, and annotation exclusion match the specification. Verified with 99 new feature/schema cases; full checks retain only the documented unrelated lint/format failures.
 
 #### Milestone 3, task 1 execution steps (2026-10-28)
 
@@ -162,6 +162,23 @@ At task 2 completion, mapping was centralized for all implemented consumers, wit
 Milestone 3 task 3 verification (2026-10-28): 73 new offline normalization/record cases pass; the full suite passes 495 tests and strict mypy passes all 18 core source files. Changed-file Ruff lint and formatting pass separately. Repository-wide lint/format retain only unchanged `scripts/fetch_dictionary.py` (I001 and formatting), reproduced before and after implementation; the permitted pre-existing-failure exception applies. `git diff --check` passes. No checks were weakened. Coverage includes exact raw offsets/BOM/CRLF, NFC composition/expansion/reordering across scripts, 80 bounded fixed-seed Unicode reference cases, complete-unit projection and ambiguous cuts, Cyrillic/case/stress/format-character preservation and diagnostics, invalid text/version/span inputs, mapped gold-record conversion for all splits with explicit test access, source immutability, and gold/pseudo normalized-form rejection.
 
 Normalization version 1 and Unicode-version metadata are available through immutable text results. Conservative alignment rejects partial NFC-unit spans instead of inventing character offsets. The raw-text/UD streaming adapter, contamination fingerprints/exclusions, production tokenizer compatibility, model stages and corpus readiness remain later work. Existing low-level tokenizer/preview behavior is preserved. Original datasets and existing generated artifacts were untouched; the unrelated `AD main.py` state remains unchanged.
+
+#### Milestone 3, task 4 execution steps (2026-10-29)
+
+1. Review existing feature behavior and define strict versioned dictionary validation and the configuration/caller boundary without changing the prescribed feature set.
+2. Implement schema/version validation and integrate the surface-only extractor and configuration; preserve existing default calls and shared normalization.
+3. Record requirement/boundary review before tests; verify exact dictionaries, affixes, shape flags, sentence boundaries, annotation exclusion and invalid schema inputs, then run all four required checks and mark M3 complete only after acceptance.
+
+#### Milestone 3, task 4 specification review before tests
+
+- Version 1 constants define the prescribed affix limits, four context offsets and lexical/six-flag shape keys. The extractor accepts explicit schema/normalizer versions, snapshots only nonempty form sequences through the shared normalizer, computes casing before lexical lowercasing and preserves independent dictionaries/order. No corpus state, vocabulary fitting or sentence-length filtering is added.
+- The reusable schema validator rejects unsupported versions, non-sequence/mapping inputs, non-string keys, missing/unknown keys, wrong value types (including integers for bias/booleans), nonfinite floats and invalid Unicode. It verifies canonical lexical strings, exact affix availability/content, true BOS/EOS flags and neighbor agreement without copying neighbor affixes/bias. It returns independent copies; original casing remains the extractor's responsibility.
+- Configuration now shares the feature-version validator; existing imports/default extractor calls remain compatible. Features receive only form sequences; annotation-bearing records, mappings, pairs and generators fail. The window remains fixed at ±2 and calls cannot cross sentence boundaries or share mutable dictionaries.
+- Existing 165 affected feature/configuration/normalization/environment tests and strict types pass. New offline fixtures will independently specify full dictionaries and Unicode/shape expectations, cover all short-affix and sentence-position boundaries, malformed schemas/values/versions, annotation/provenance exclusion and mutation isolation, and pass explicit recorded versions through the forms-only API.
+
+Milestone 3 completion verification (2026-10-29): task 4 adds 99 passing offline feature/schema cases (110 feature tests total). All 594 repository tests pass, including the existing CRFsuite compatibility/persistence integration check; strict mypy passes all 19 core source files. Changed-file Ruff lint and formatting pass separately. Repository-wide lint/format still fail only on unchanged `scripts/fetch_dictionary.py` (I001 and formatting), reproduced before and after implementation; the permitted pre-existing-failure exception applies. No checks were weakened. `git diff --check` passes. New cases verify exact full dictionaries, Unicode affix/casing/shape semantics, every boundary for lengths 1–5, fixed ±2 context, invalid schema/value/version/container failures with token/key diagnostics, independent mutable snapshots, annotation exclusion and configuration-version propagation. Two initial diagnostic-test regex failures were corrected by escaping literal feature keys; no implementation behavior was weakened to pass them.
+
+All four M3 tasks now meet fixture-based acceptance criteria. Feature defaults and valid output dictionaries remain compatible; runtime extraction and dictionary validation now reject previously unchecked invalid inputs. Schema/normalizer versions are explicit for future pipeline/model callers. Production corpus readiness, raw-text/UD adapter compatibility and later model/orchestration stages remain unimplemented; no real-corpus training or evaluation result is claimed. Original datasets and existing generated artifacts were untouched, and the pre-existing `AD main.py` state remains unchanged.
 
 ### 4. Implement Literature Streaming and Contamination Controls
 
@@ -229,8 +246,8 @@ Update this table with the actual command result, date, and relevant evidence du
 |---|---|---|
 | Lint | `uv run ruff check .` | Failed: unchanged `scripts/fetch_dictionary.py` I001; changed-code lint passed |
 | Formatting | `uv run ruff format --check .` | Failed: unchanged `scripts/fetch_dictionary.py` requires formatting; changed-code formatting passed |
-| Types | `uv run mypy src/crf/` | Passed (2026-10-28): 18 source files |
-| Tests | `uv run pytest tests/ -v` | Passed (2026-10-28): 495 tests, including 73 normalization/record cases, 89 shared label-space tests, 59 gold parser/audit tests and two offline integration tests |
+| Types | `uv run mypy src/crf/` | Passed (2026-10-29): 19 source files |
+| Tests | `uv run pytest tests/ -v` | Passed (2026-10-29): 594 tests, including 110 feature tests, 73 normalization/record cases, 89 shared label-space tests, 59 gold parser/audit tests and two offline integration tests |
 
 ## Open Dependencies and Blockers
 

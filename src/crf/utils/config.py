@@ -12,6 +12,11 @@ from yaml.nodes import MappingNode
 from crf.data.labels import SERVICE_TAGS as SERVICE_TAGS
 from crf.data.labels import UPOS as UPOS
 from crf.data.labels import TagMapping, TagMappingError
+from crf.features.schema import (
+    FEATURE_SCHEMA_VERSION,
+    FeatureSchemaError,
+    validate_feature_version,
+)
 from crf.utils.paths import (
     PathValidationError,
     reject_symlink_ancestors,
@@ -61,7 +66,7 @@ class PreprocessingConfig:
 
 @dataclass(frozen=True)
 class FeatureConfig:
-    schema_version: int = 1
+    schema_version: int = FEATURE_SCHEMA_VERSION
 
 
 @dataclass(frozen=True)
@@ -271,9 +276,13 @@ def parse_config(
         raise ConfigError(str(exc)) from exc
     versions = _section(raw, "preprocessing", asdict(PreprocessingConfig()))
     features = _section(raw, "features", asdict(FeatureConfig()))
-    for key, version in (versions | features).items():
+    for key, version in versions.items():
         if _integer(version, key) != 1:
             raise ConfigError(f"Unsupported {key}: {version}")
+    try:
+        feature_version = validate_feature_version(features["schema_version"])
+    except FeatureSchemaError as exc:
+        raise ConfigError(str(exc)) from exc
     training = _section(raw, "training", asdict(TrainingConfig()))
     params = _mapping(
         training["parameters"], "training.parameters", set(asdict(CRFParameters()))
@@ -312,9 +321,7 @@ def parse_config(
                 versions["tokenizer_adapter_version"], "tokenizer_adapter_version"
             ),
         ),
-        features=FeatureConfig(
-            schema_version=_integer(features["schema_version"], "schema_version")
-        ),
+        features=FeatureConfig(schema_version=feature_version),
         training=TrainingConfig(
             _grid(
                 training["c1_grid"],

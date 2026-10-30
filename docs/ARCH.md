@@ -826,6 +826,46 @@ Affix lengths count Unicode code points after lexical normalization. Emit an aff
 * **Context and boundaries:** For offsets `-2`, `-1`, `+1`, and `+2`, include the neighboring token's `word.lower` and six shape flags, prefixed with the offset, for example `-1:word.lower` and `+1:is_uppercase`. Do not copy neighboring affixes or bias terms. If a neighbor lies outside the sentence, emit only its boundary flag, for example `-1:BOS = True` or `+2:EOS = True`. Never cross sentence boundaries.
 * **Versioning and vocabulary behavior:** Use the same recorded feature-schema version and extraction configuration for both models and every pipeline stage. The initial schema contains no learned vocabulary mapping or IDF features. Emit unseen lexical strings normally; do not fit preprocessing on validation or test data. Reject unsupported keys, value types, and nonfinite numeric values.
 
+#### Feature schema implementation (M3 task 4, 2026-10-29)
+
+`crf.features.schema` owns version 1, feature value/dictionary aliases, affix
+limits, context offsets and the strict sentence-feature validator. Configuration
+uses the same version check. `sentence_features(forms, schema_version=1,
+normalizer_version=1)` retains the existing default call and returns one fresh
+dictionary per token after validation. The two versions are keyword-only;
+future training/inference callers must supply the recorded feature and normalizer
+versions from configuration/model metadata. A schema version is not a configurable
+window or authorization for extra features. No feature/model wire-format change
+or new dependency is introduced.
+
+Only a nonempty ordered sequence of nonempty surface strings is accepted; strings
+as sentences, mappings, generators, token-label pairs and annotation-bearing
+records are rejected. The shared normalizer snapshots forms independently before
+shape computation, preserving source strings and token order. Features remain
+plain mutable dictionaries because CRFsuite consumes mappings with dynamic affix
+and boundary keys; each call/token receives independent dictionaries without a
+learned vocabulary, shared cache or retained corpus state.
+
+`validate_sentence_features()` accepts a nonempty sequence of mappings, returns
+validated dictionary copies and never silently drops fields or coerces values.
+It enforces exact required/allowed keys for each lexical length and sentence
+position, strict string/boolean/finite-float types, `bias: 1.0`, true boundary
+flags, normalized lexical strings, affix contents and neighbor agreement. Context
+contains only the neighbor's lexical form and six flags, or its one boundary
+flag, never affixes/bias or both context and boundary data. Unknown keys, missing
+keys, invalid Unicode, nonfinite floats and numeric stand-ins for booleans fail
+with token/key diagnostics. The schema validator checks internal consistency;
+it cannot infer original casing from lowercase lexical strings. Correct casing
+and other shape semantics are computed from the normalized surface forms by the
+extractor and verified with independent fixtures.
+
+The validator and extractor raise `FeatureSchemaError` (a `ValueError` subclass);
+configuration errors remain `ConfigError`. Existing imports of feature aliases
+and `normalize_form` from `crf.features.surface` remain compatible. Gold/pseudo
+consumers pass only `SentenceRecord.feature_forms`, keeping targets and provenance
+separate. This completes fixture-based M3 preprocessing/features; production
+tokenizer compatibility and all later pipeline stages remain separate work.
+
 ### Strict Test Data Isolation & Leakage Prevention
 
 1. **Immutable Test Set:**
