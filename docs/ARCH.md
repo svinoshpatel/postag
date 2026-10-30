@@ -650,6 +650,12 @@ Audit iterators are single-use. No report or frozen corpus identity is available
 * Require a configurable pipeline memory budget, defaulting to 8 GiB (8,192 MiB). Monitor aggregate resident memory of the pipeline's main process and worker processes, and stop a run that exceeds the budget. Do not publish an incomplete model as successful. Monitoring is a best-effort safeguard, not a guaranteed operating-system memory limit.
 * Record the effective read-buffer size, batch token limit, sentence limits, pseudo-label token cap, selection seed, memory budget, and observed peak resident memory with the run.
 
+#### Preprocessing Monitor Ownership
+
+Source hashing, gold/raw readers, sentence batching and contamination auditing accept an optional caller-owned `MemoryMonitor`. Existing unmonitored library calls remain compatible for bounded exploration; a pipeline owner must enter a configured monitor around production preprocessing, consume iterators fully and call `ensure_success()` after monitor exit before publishing successful outputs. Readers neither start/stop the shared monitor nor silently reduce data. Configuration-aware calls reject a monitor whose budget differs from the effective configuration, and reading with an inactive/finished monitor fails.
+
+Checkpoints occur on bounded source-byte reads (including opaque identity hashing and draining oversized literature), gold physical lines and complete-sentence boundaries, adapted raw candidates, batch boundaries and audit construction/selection/final identity checks. A memory or sampling failure propagates immediately as a resource failure; it is never counted as a resource-size exclusion or a reason to skip/truncate gold. Reports obtained while the enclosing monitor is active remain provisional until that monitor completes successfully. An audit report checks a still-active monitor, or requires success from an already-finished monitor. Database/intermediate presence alone never authorizes pipeline completion. Background sampling remains the best-effort guard during indivisible normalization/tokenizer/native operations; checkpoints do not establish a hard memory limit.
+
 ## Additional Implementation Constraints
 
 ### Technical Verification Invariants

@@ -99,9 +99,36 @@ Tests verified exact normalization/hash expectations, case/punctuation/formattin
 
 Scoped diffs confirm the dictionary script, memory monitor/tests and pre-existing `AD main.py` state were untouched. New indexes were produced only in temporary offline test repositories; `.gitignore` already covers their prescribed `data/interim/` location. No production corpus, model inference/training or final evaluation has run. Raw standalone inference remains unfiltered. Run-report publication and aggregate-monitor integration remain with later orchestration/M4 resource work. Official source provenance and residual near-duplicate/tokenizer limitations remain corpus-readiness gates.
 
+## M4 Task 3 — Streaming and Resource-Failure Verification
+
+**2026-10-30 — Complete for fixture-based acceptance.** Prior contamination work was committed as `9ba0b64`, with the unrelated staged `main.py` entry preserved. Added compatible keyword-only optional monitor parameters through source identities/hashing, gold/raw readers, batching and contamination auditing. The caller owns the monitor lifecycle; configuration-aware calls require its budget to match. Added shared active-monitor checkpoints and retained unmonitored bounded-library behavior. Existing focused tests passed (203 cases) and strict types passed before adding new verification. No dependency, configuration or record/report schema changes were required.
+
+Pre-test requirement review:
+
+- Streaming → checkpoints on bounded opaque-byte hashing and raw decoding, including oversized-paragraph draining; gold physical-line and complete-sentence boundaries; raw adaptation and token-bounded batches. No whole-corpus text/features/marginals are accumulated. SQLite indexes grow incrementally on disk. A test-only streamed JSONL intermediate will exercise existing atomic publication without introducing a pseudo-label schema before M6.
+- Candidate integrity → character/token limits reject whole raw candidates, recover at genuine paragraph/sentence boundaries and preserve source spans/ordinal gaps. Gold parsing/audit never uses raw limits or truncation. A resource failure aborts rather than filtering a gold sentence.
+- Policy boundaries → raw inference retains repeated, gold-overlapping and known-MWT sentences subject only to resource limits; pseudo-label preprocessing applies the separate contamination policy. Neither path applies model-confidence selection here; confidence and sampling remain M6 work.
+- Controlled failures → deterministic sampler inputs check budget equality/exceedance, sampling failure, source-hashing/raw-draining/gold-read/audit checkpoints and latched failure. Inactive/finished/wrong-budget monitors must fail before outputs. Check failures after partial output, during final monitor exit and after audit exhaustion: no successful report/publication may bypass the shared monitor's failure. Production RSS safety remains best-effort; tests do not induce real low-memory conditions.
+- Lifecycle → optional parameters preserve existing calls and schemas; readers never start/stop a caller's monitor. Integration fixtures must exhaust iterators, close DB/streams, exit monitoring, require `ensure_success()` and publish only afterward. Early termination or exceptions leave no published JSONL/completion result; existing artifacts/raw sources remain intact. Aggregate RSS behavior uses the existing separately tested sampler and controlled values in integration tests.
+
+Verification on CPython 3.14.6/macOS arm64. Commands used `UV_CACHE_DIR=/private/tmp/postag-uv-cache` with the locked environment:
+
+| Check | Actual command (after cache prefix) | Result |
+|---|---|---|
+| Focused integration | `uv run --frozen pytest tests/test_preprocessing_streaming.py -q` | Passed: 23 new offline integration cases |
+| Lint | `uv run --frozen ruff check .` | Failed: unchanged `scripts/fetch_dictionary.py` I001 only |
+| Formatting | `uv run --frozen ruff format --check .` | Failed: unchanged `scripts/fetch_dictionary.py`; other 46 Python files passed |
+| Types | `uv run --frozen mypy src/crf/` | Passed: 22 source files |
+| Tests | `uv run --frozen pytest tests/ -v` | Passed: 761 tests outside the sandbox, including the existing real RSS smoke test |
+| Changed-code lint/format | `uv run --frozen ruff check src/crf/utils/resources.py src/crf/data/identity.py src/crf/data/conllu.py src/crf/data/literature.py src/crf/data/contamination.py tests/test_preprocessing_streaming.py` and the same paths with `ruff format --check` | Passed: six changed Python files |
+
+The new tests verify exact-budget success, latched budget/sampler failures, bounded hashing, aborting an oversized-paragraph drain before emitting a fragment, fatal mid-gold-sentence failures, full 24-word gold records despite four-token raw limits, complete raw rejection/recovery with original spans, inference versus pseudo-label exclusions, token-bounded batching with one-candidate lookahead, inactive/finished/wrong-budget monitor rejection, report checks against final monitor outcomes, partial SQLite construction cleanup, early termination and late decoding failure cleanup. A 300-sentence stream writes diagnostics and grows the disk index incrementally while weak-reference observation verifies at most four live raw sentence objects; prior records are not retained. Atomic JSONL publication is blocked by failures after partial writes or during final monitor exit. Controlled samplers avoid real memory exhaustion; original fixture sources remain unchanged during processing.
+
+The dictionary script's lint/format failures are unchanged from the previous task; no checks were weakened or unrelated files repaired. `.gitignore` already covers test intermediates in the prescribed artifact tree. No production corpus, training or final evaluation ran. M4 is complete at fixture level; selected-corpus tokenizer/source compatibility, M5–M8 model/CLI stages and M9 full pipeline integration remain pending. Memory monitoring remains best-effort during indivisible library/native operations; future stage owners must supply the monitor, exhaust all iterators and require successful monitor exit before guarded publication.
+
 ## Verification Record
 
-M1–M3 code checks: 2026-10-29, CPython 3.14.6/macOS arm64. These historical results were not rerun for the documentation compaction on 2026-10-30; references, task state and scoped diffs were checked. New code verification is recorded in [M4 task 1](#m4-task-1--literature-reader-and-ud-adapter).
+M1–M3 code checks: 2026-10-29, CPython 3.14.6/macOS arm64. These historical results were not rerun for the documentation compaction on 2026-10-30; references, task state and scoped diffs were checked. Latest code verification is recorded in [M4 task 3](#m4-task-3--streaming-and-resource-failure-verification), with earlier M4 results above.
 
 | Check | Command | Recorded result |
 |---|---|---|
@@ -114,7 +141,7 @@ M1–M3 code checks: 2026-10-29, CPython 3.14.6/macOS arm64. These historical re
 
 - Runtime imports, `uv lock --check`/`uv pip check`, isolated editable imports, wheel/sdist contents and artifact ignore rules were verified during M1–M2. Tiny offline CRF fitting/marginal/joblib checks passed; cross-platform bitwise reproducibility is not claimed.
 - Lint/format exception: unchanged `scripts/fetch_dictionary.py` fails I001 and formatting, reproduced before/after implementation. Changed-code checks pass; no checks were weakened. Existing `AD main.py` state remains untouched.
-- Official gold availability/release identity, source separation and tokenizer compatibility remain unverified. M4 must handle upstream standalone formatting-character omissions, UD boundaries and aligned normalization with bounded paragraph streaming. No production training or final evaluation has run.
+- Official gold availability/release identity, source separation and selected-corpus tokenizer compatibility remain unverified. M4 covers bounded streaming, aligned UD adaptation/formatting-character preservation, contamination controls and resource-failure integration with offline fixtures. No production training or final evaluation has run.
 
 ## Documentation Maintenance
 

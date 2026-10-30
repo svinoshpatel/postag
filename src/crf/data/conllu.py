@@ -22,6 +22,7 @@ from crf.data.labels import TagMappingError, validate_upos
 from crf.data.normalization import NormalizationError, normalize_forms
 from crf.data.records import SentenceRecord, parse_sentence_record
 from crf.utils.config import ConfigError, PipelineConfig
+from crf.utils.resources import MemoryMonitor, check_memory
 from crf.utils.serialization import ValidationError
 
 type RowID = int | tuple[int, Literal["-", "."], int]
@@ -111,7 +112,9 @@ def _error(path: Path, line: int, reason: str) -> ValidationError:
     return ValidationError(f"{path}:{line}: {reason}")
 
 
-def _blocks(path: Path, source: InputIdentity) -> Iterator[tuple[tuple[int, str], ...]]:
+def _blocks(
+    path: Path, source: InputIdentity, monitor: MemoryMonitor | None = None
+) -> Iterator[tuple[tuple[int, str], ...]]:
     """Keep at most one sentence; decode physical lines for precise diagnostics."""
     block: list[tuple[int, str]] = []
     digest = hashlib.sha256()
@@ -120,6 +123,7 @@ def _blocks(path: Path, source: InputIdentity) -> Iterator[tuple[tuple[int, str]
     try:
         with path.open("rb") as stream:
             for line_number, raw in enumerate(stream, 1):
+                check_memory(monitor)
                 digest.update(raw)
                 size += len(raw)
                 try:
@@ -141,6 +145,7 @@ def _blocks(path: Path, source: InputIdentity) -> Iterator[tuple[tuple[int, str]
         raise _error(path, line_number or 1, str(exc)) from exc
     if block:
         raise _error(path, line_number, "missing final blank sentence delimiter")
+    check_memory(monitor)
     if (digest.hexdigest(), size) != (source.source_sha256, source.size_bytes):
         raise _error(path, line_number or 1, "source changed while parsing")
 
@@ -318,13 +323,15 @@ def _iterate(
     repository_root: Path,
     *,
     labeled: bool,
+    monitor: MemoryMonitor | None = None,
 ) -> Iterator[tuple[GoldAuditSentence, tuple[str, ...], tuple[str, ...]]]:
     if source.source_role not in GOLD_ROLES:
         raise ValidationError("CoNLL-U readers require a gold source role")
-    verify_input_identity(source, config, repository_root)
+    verify_input_identity(source, config, repository_root, monitor=monitor)
     path = repository_root.resolve() / source.source_path
     document_id = paragraph_id = None
-    for ordinal, block in enumerate(_blocks(path, source), 1):
+    for ordinal, block in enumerate(_blocks(path, source, monitor), 1):
+        check_memory(monitor)
         result = _parse_block(
             block,
             path=path,
@@ -335,14 +342,21 @@ def _iterate(
             labeled=labeled,
         )
         document_id, paragraph_id = result[0].document_id, result[0].paragraph_id
+        check_memory(monitor)
         yield result
 
 
 def iter_gold_audit(
-    source: InputIdentity, config: PipelineConfig, repository_root: Path
+    source: InputIdentity,
+    config: PipelineConfig,
+    repository_root: Path,
+    *,
+    monitor: MemoryMonitor | None = None,
 ) -> Iterator[GoldAuditSentence]:
     """Read only surface fields, including test text without annotation interpretation."""
-    for audit, _, _ in _iterate(source, config, repository_root, labeled=False):
+    for audit, _, _ in _iterate(
+        source, config, repository_root, labeled=False, monitor=monitor
+    ):
         yield audit
 
 
@@ -352,6 +366,7 @@ def iter_gold_sentences(
     repository_root: Path,
     *,
     final_evaluation: bool = False,
+    monitor: MemoryMonitor | None = None,
 ) -> Iterator[GoldSentence]:
     """Load original gold labels; test labels require an explicit evaluation opt-in."""
     if type(final_evaluation) is not bool:
@@ -363,7 +378,7 @@ def iter_gold_sentences(
     except ConfigError as exc:
         raise ValidationError(str(exc)) from exc
     for audit, labels, comments in _iterate(
-        source, config, repository_root, labeled=True
+        source, config, repository_root, labeled=True, monitor=monitor
     ):
         targets = label_space.map_upos(labels)
         yield GoldSentence(audit, labels, targets, comments)
@@ -375,9 +390,16 @@ def iter_gold_records(
     repository_root: Path,
     *,
     final_evaluation: bool = False,
+    monitor: MemoryMonitor | None = None,
 ) -> Iterator[SentenceRecord]:
     """Stream validated normalized gold records; retain parser metadata separately."""
     for parsed in iter_gold_sentences(
-        source, config, repository_root, final_evaluation=final_evaluation
+        source,
+        config,
+        repository_root,
+        final_evaluation=final_evaluation,
+        monitor=monitor,
     ):
-        yield parsed.to_record(config, final_evaluation=final_evaluation)
+        record = parsed.to_record(config, final_evaluation=final_evaluation)
+        check_memory(monitor)
+        yield record

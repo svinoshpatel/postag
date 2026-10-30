@@ -182,3 +182,16 @@ class MemoryMonitor:
         finally:
             self._finished = True
         return False
+
+
+def check_memory(
+    monitor: MemoryMonitor | None, *, expected_budget_mib: int | None = None
+) -> None:
+    """Check a caller-owned active monitor without taking over its lifecycle."""
+    if monitor is None:
+        return
+    if expected_budget_mib is not None and monitor.budget_mib != expected_budget_mib:
+        raise ResourceMonitoringError(
+            "Memory monitor budget disagrees with configuration"
+        )
+    monitor.checkpoint()

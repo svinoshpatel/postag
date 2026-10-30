@@ -26,6 +26,7 @@ from crf.data.segmentation import (
 from crf.utils.artifacts import atomic_writer
 from crf.utils.config import PipelineConfig
 from crf.utils.paths import validate_output_path
+from crf.utils.resources import MemoryMonitor, check_memory
 from crf.utils.serialization import (
     ValidationError,
     config_sha256,
@@ -167,12 +168,14 @@ class ContaminationAudit:
         root: Path,
         inputs: tuple[InputIdentity, ...],
         rules: tuple[KnownSourceExclusion, ...],
+        monitor: MemoryMonitor | None = None,
     ) -> None:
         self._connection = connection
         self._config = config
         self._root = root
         self._inputs = inputs
         self._rules = rules
+        self._monitor = monitor
         self._metadata = segmentation_metadata(
             adapter_version=config.preprocessing.tokenizer_adapter_version,
             normalizer_version=config.preprocessing.normalizer_version,
@@ -197,6 +200,7 @@ class ContaminationAudit:
         )
 
     def _build(self) -> None:
+        self._checkpoint()
         db = self._connection
         db.execute("PRAGMA cache_size = -2048")
         db.execute("PRAGMA temp_store = FILE")
@@ -213,7 +217,10 @@ class ContaminationAudit:
         for source in self._inputs:
             if source.source_role not in GOLD_ROLES:
                 continue
-            for audit in iter_gold_audit(source, self._config, self._root):
+            for audit in iter_gold_audit(
+                source, self._config, self._root, monitor=self._monitor
+            ):
+                self._checkpoint()
                 fingerprint = sentence_fingerprint(
                     audit.surface_text,
                     normalizer_version=self._metadata.normalizer_version,
@@ -225,6 +232,7 @@ class ContaminationAudit:
                 self._gold_count += 1
                 if source.source_role == "train_gold":
                     for row in audit.surface_rows:
+                        self._checkpoint()
                         if (
                             not isinstance(row.token_id, tuple)
                             or row.token_id[1] != "-"
@@ -249,10 +257,17 @@ class ContaminationAudit:
                             (json_bytes(list(forms)), forms[0], len(forms), row.form),
                         )
             db.commit()
+            self._checkpoint()
+
+    def _checkpoint(self) -> None:
+        check_memory(
+            self._monitor, expected_budget_mib=self._config.resources.memory_budget_mib
+        )
 
     def _match_mwt(self, sentence: RawSentence) -> str | None:
         forms = sentence.feature_forms
         for index, first in enumerate(forms):
+            self._checkpoint()
             candidates = self._connection.execute(
                 "SELECT tokens, count, surface FROM mwt WHERE first=? AND count<=? ORDER BY tokens",
                 (first, len(forms) - index),
@@ -265,6 +280,7 @@ class ContaminationAudit:
     def _decision(
         self, sentence: RawSentence
     ) -> EligibleSentence | ContaminationExclusion:
+        self._checkpoint()
         fingerprint = sentence_fingerprint(
             sentence.text.surface_text,
             normalizer_version=self._metadata.normalizer_version,
@@ -322,8 +338,10 @@ class ContaminationAudit:
         if self._closed or self._started:
             raise ValidationError("Contamination audit is closed or already consumed")
         self._started = True
+        self._checkpoint()
         rules = {rule.source_path: rule for rule in self._rules}
         for source in self._inputs:
+            self._checkpoint()
             if source.source_role != "literature":
                 continue
             rule = rules.get(source.source_path)
@@ -346,16 +364,26 @@ class ContaminationAudit:
                 yield exclusion
                 continue
             for raw in iter_literature_events(
-                source, config=self._config, repository_root=self._root
+                source,
+                config=self._config,
+                repository_root=self._root,
+                monitor=self._monitor,
             ):
                 event = raw if isinstance(raw, RawExclusion) else self._decision(raw)
                 if not isinstance(event, EligibleSentence):
                     self._record_exclusion(event)
+                self._checkpoint()
                 yield event
             self._connection.commit()
-        if tuple(iter_input_identities(self._config, self._root)) != self._inputs:
+        if (
+            tuple(
+                iter_input_identities(self._config, self._root, monitor=self._monitor)
+            )
+            != self._inputs
+        ):
             raise ValidationError("Corpus inputs changed during contamination audit")
         self._connection.commit()
+        self._checkpoint()
         self._complete = True
 
     def _record_exclusion(self, event: RawExclusion | ContaminationExclusion) -> None:
@@ -371,6 +399,10 @@ class ContaminationAudit:
         """Expose completion metadata only after all iterator/source checks pass."""
         if not self._complete or self._closed:
             raise ValidationError("Contamination audit is incomplete or closed")
+        if self._monitor is not None and self._monitor.finished:
+            self._monitor.ensure_success()
+        else:
+            self._checkpoint()
         count = self._connection.execute("SELECT COUNT(*) FROM mwt").fetchone()
         return AuditReport(
             AUDIT_VERSION,
@@ -397,6 +429,7 @@ def contamination_audit(
     *,
     index_path: Path,
     known_source_exclusions: Sequence[KnownSourceExclusion] = (),
+    monitor: MemoryMonitor | None = None,
 ) -> Iterator[ContaminationAudit]:
     """Build a fresh guarded disk index; failures leave only incomplete intermediates.
 
@@ -404,6 +437,7 @@ def contamination_audit(
     iter_events(), and persists report().to_dict() through normal run publication.
     No existing output is overwritten and no completion descriptor is published.
     """
+    check_memory(monitor, expected_budget_mib=config.resources.memory_budget_mib)
     root = repository_root.resolve()
     destination = validate_output_path(index_path, root)
     relative = destination.relative_to(root)
@@ -413,7 +447,7 @@ def contamination_audit(
         or relative.suffix != ".sqlite3"
     ):
         raise ValidationError("Audit index must be data/interim/<run_id>/*.sqlite3")
-    inputs = tuple(iter_input_identities(config, root))
+    inputs = tuple(iter_input_identities(config, root, monitor=monitor))
     rules = _rules(known_source_exclusions, inputs)
     # Reserve through the race-safe artifact helper before SQLite may open it.
     with atomic_writer(destination, root, validate=_empty_index):
@@ -421,7 +455,7 @@ def contamination_audit(
     connection = sqlite3.connect(destination)
     audit: ContaminationAudit | None = None
     try:
-        audit = ContaminationAudit(connection, config, root, inputs, rules)
+        audit = ContaminationAudit(connection, config, root, inputs, rules, monitor)
         audit._build()
         yield audit
     finally:

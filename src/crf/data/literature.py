@@ -23,6 +23,7 @@ from crf.data.segmentation import (
     sentence_ranges,
 )
 from crf.utils.config import PipelineConfig, ResourceConfig
+from crf.utils.resources import MemoryMonitor, check_memory
 from crf.utils.serialization import ValidationError, integer
 
 logger = logging.getLogger(__name__)
@@ -71,10 +72,13 @@ class _Paragraph:
 
 
 def _decoded_chunks(
-    source: InputIdentity, config: PipelineConfig, root: Path
+    source: InputIdentity,
+    config: PipelineConfig,
+    root: Path,
+    monitor: MemoryMonitor | None = None,
 ) -> Iterator[str]:
     """Validate all consumed bytes, including discarded oversized paragraphs."""
-    verify_input_identity(source, config, root)
+    verify_input_identity(source, config, root, monitor=monitor)
     path = root / source.source_path
     decoder = codecs.getincrementaldecoder(source.encoding)(errors="strict")
     digest = hashlib.sha256()
@@ -83,6 +87,7 @@ def _decoded_chunks(
         with path.open("rb") as stream:
             while True:
                 chunk = stream.read(config.resources.read_buffer_bytes)
+                check_memory(monitor)
                 pending = len(decoder.getstate()[0])
                 try:
                     decoded = decoder.decode(chunk, final=not chunk)
@@ -104,7 +109,7 @@ def _decoded_chunks(
         raise ValidationError(
             f"{source.source_path}: consumed source checksum/size mismatch"
         )
-    verify_input_identity(source, config, root)
+    verify_input_identity(source, config, root, monitor=monitor)
 
 
 def _line_units(chunks: Iterable[str]) -> Iterator[str]:
@@ -194,7 +199,11 @@ def _validate_resources(resources: ResourceConfig) -> None:
 
 
 def iter_literature_events(
-    source: InputIdentity, *, config: PipelineConfig, repository_root: Path
+    source: InputIdentity,
+    *,
+    config: PipelineConfig,
+    repository_root: Path,
+    monitor: MemoryMonitor | None = None,
 ) -> Iterator[RawSentence | RawExclusion]:
     """Yield sentences/exclusions incrementally; exhaust before accepting a source.
 
@@ -204,6 +213,7 @@ def iter_literature_events(
     if source.source_role != "literature":
         raise ValidationError("Raw literature reader requires a literature source")
     _validate_resources(config.resources)
+    check_memory(monitor, expected_budget_mib=config.resources.memory_budget_mib)
     metadata = segmentation_metadata(
         adapter_version=config.preprocessing.tokenizer_adapter_version,
         normalizer_version=config.preprocessing.normalizer_version,
@@ -211,9 +221,10 @@ def iter_literature_events(
     resources = config.resources
     ordinal = 0
     for paragraph in _paragraphs(
-        _decoded_chunks(source, config, repository_root.resolve()),
+        _decoded_chunks(source, config, repository_root.resolve(), monitor),
         resources.max_paragraph_chars,
     ):
+        check_memory(monitor)
         exclusion: RawExclusion | None = None
         if paragraph.text is None:
             exclusion = RawExclusion(
@@ -240,6 +251,7 @@ def iter_literature_events(
             version=metadata.normalizer_version,
         )
         for start, end in sentence_ranges(normalized):
+            check_memory(monitor)
             ordinal += 1
             span = normalized.source_span(start, end)
             characters = span[1] - span[0]
@@ -255,6 +267,7 @@ def iter_literature_events(
                 )
             else:
                 text = adapt_sentence(normalized, start, end)
+                check_memory(monitor)
                 if not text.normalized_forms:
                     continue
                 if len(text.normalized_forms) > resources.max_sentence_tokens:
@@ -293,23 +306,31 @@ def iter_literature_events(
 
 
 def iter_literature(
-    config: PipelineConfig, repository_root: Path
+    config: PipelineConfig,
+    repository_root: Path,
+    *,
+    monitor: MemoryMonitor | None = None,
 ) -> Iterator[RawSentence | RawExclusion]:
     """Discover and stream each eligible source separately, without gold reads."""
-    for source in iter_literature_identities(config, repository_root):
+    for source in iter_literature_identities(config, repository_root, monitor=monitor):
         yield from iter_literature_events(
-            source, config=config, repository_root=repository_root
+            source, config=config, repository_root=repository_root, monitor=monitor
         )
 
 
 def sentence_batches(
-    sentences: Iterable[RawSentence], *, token_limit: int = 4096
+    sentences: Iterable[RawSentence],
+    *,
+    token_limit: int = 4096,
+    monitor: MemoryMonitor | None = None,
 ) -> Iterator[tuple[RawSentence, ...]]:
     """Bound complete-sentence inference batches; never split or silently drop."""
     integer(token_limit, "token_limit", 1)
+    check_memory(monitor)
     batch: list[RawSentence] = []
     tokens = 0
     for sentence in sentences:
+        check_memory(monitor)
         count = len(sentence.feature_forms)
         if not 0 < count <= token_limit:
             raise ValidationError("Sentence cannot fit in token-bounded batch")
@@ -319,4 +340,5 @@ def sentence_batches(
         batch.append(sentence)
         tokens += count
     if batch:
+        check_memory(monitor)
         yield tuple(batch)

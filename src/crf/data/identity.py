@@ -9,6 +9,7 @@ from typing import Literal
 
 from crf.utils.config import PipelineConfig, validate_input_paths
 from crf.utils.paths import reject_symlink_ancestors
+from crf.utils.resources import MemoryMonitor, check_memory
 from crf.utils.serialization import (
     ValidationError,
     integer,
@@ -77,19 +78,24 @@ def parse_input_identity(value: object, config: PipelineConfig) -> InputIdentity
     )
 
 
-def digest_file(path: Path, *, buffer_bytes: int = 65536) -> FileDigest:
+def digest_file(
+    path: Path, *, buffer_bytes: int = 65536, monitor: MemoryMonitor | None = None
+) -> FileDigest:
     """Hash bounded original-byte chunks and reject observed file replacement/change."""
     integer(buffer_bytes, "buffer_bytes", 1)
+    check_memory(monitor)
     digest = hashlib.sha256()
     size = 0
     try:
         with path.open("rb") as stream:
             before = os.fstat(stream.fileno())
             while chunk := stream.read(buffer_bytes):
+                check_memory(monitor)
                 digest.update(chunk)
                 size += len(chunk)
             after = os.fstat(stream.fileno())
         current = path.stat()
+        check_memory(monitor)
         signatures = {
             (stat.st_dev, stat.st_ino, stat.st_size, stat.st_mtime_ns, stat.st_ctime_ns)
             for stat in (before, after, current)
@@ -155,10 +161,17 @@ def _source_path(
 
 
 def verify_input_identity(
-    identity: InputIdentity, config: PipelineConfig, repository_root: Path
+    identity: InputIdentity,
+    config: PipelineConfig,
+    repository_root: Path,
+    *,
+    monitor: MemoryMonitor | None = None,
 ) -> None:
+    check_memory(monitor, expected_budget_mib=config.resources.memory_budget_mib)
     path = _source_path(identity, config, repository_root)
-    actual = digest_file(path, buffer_bytes=config.resources.read_buffer_bytes)
+    actual = digest_file(
+        path, buffer_bytes=config.resources.read_buffer_bytes, monitor=monitor
+    )
     if (actual.sha256, actual.size_bytes) != (
         identity.source_sha256,
         identity.size_bytes,
@@ -167,35 +180,46 @@ def verify_input_identity(
 
 
 def iter_input_identities(
-    config: PipelineConfig, repository_root: Path
+    config: PipelineConfig,
+    repository_root: Path,
+    *,
+    monitor: MemoryMonitor | None = None,
 ) -> Iterator[InputIdentity]:
     """Discover and hash sources without decoding or interpreting any annotation."""
+    check_memory(monitor, expected_budget_mib=config.resources.memory_budget_mib)
     validate_input_paths(config, repository_root)
     root = repository_root.resolve()
     sources: list[tuple[SourceRole, Path, str]] = [
         (role, getattr(config.data, role), "utf-8") for role in GOLD_ROLES
     ]
-    for path in discover_literature_paths(config, root):
+    for path in discover_literature_paths(config, root, monitor=monitor):
         sources.append(("literature", path, config.data.source_encoding))
     for role, relative, encoding in sources:
         stub = InputIdentity(1, role, relative.as_posix(), "0" * 64, 0, encoding)
         path = _source_path(stub, config, root)
-        digest = digest_file(path, buffer_bytes=config.resources.read_buffer_bytes)
+        digest = digest_file(
+            path, buffer_bytes=config.resources.read_buffer_bytes, monitor=monitor
+        )
         yield InputIdentity(
             1, role, relative.as_posix(), digest.sha256, digest.size_bytes, encoding
         )
 
 
 def discover_literature_paths(
-    config: PipelineConfig, repository_root: Path
+    config: PipelineConfig,
+    repository_root: Path,
+    *,
+    monitor: MemoryMonitor | None = None,
 ) -> tuple[Path, ...]:
     """Return guarded, sorted repository-relative paths without opening gold."""
+    check_memory(monitor, expected_budget_mib=config.resources.memory_budget_mib)
     validate_input_paths(config, repository_root)
     root = repository_root.resolve()
     literature = root / config.data.literature_dir
     result: list[Path] = []
     # This holds paths only, never corpus text or parsed records.
     for path in sorted(literature.iterdir(), key=lambda path: path.name):
+        check_memory(monitor)
         if path.suffix != ".txt":
             continue
         if path.is_symlink():
@@ -221,11 +245,14 @@ def discover_literature_paths(
 
 
 def iter_literature_identities(
-    config: PipelineConfig, repository_root: Path
+    config: PipelineConfig,
+    repository_root: Path,
+    *,
+    monitor: MemoryMonitor | None = None,
 ) -> Iterator[InputIdentity]:
     """Hash eligible literature only; never read gold bytes or annotations."""
     root = repository_root.resolve()
-    for relative in discover_literature_paths(config, root):
+    for relative in discover_literature_paths(config, root, monitor=monitor):
         stub = InputIdentity(
             1,
             "literature",
@@ -235,7 +262,9 @@ def iter_literature_identities(
             config.data.source_encoding,
         )
         path = _source_path(stub, config, root)
-        digest = digest_file(path, buffer_bytes=config.resources.read_buffer_bytes)
+        digest = digest_file(
+            path, buffer_bytes=config.resources.read_buffer_bytes, monitor=monitor
+        )
         yield InputIdentity(
             1,
             "literature",
