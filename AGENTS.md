@@ -4,10 +4,18 @@ This repository implements the Ukrainian Semi-Supervised CRF POS Tagger.
 
 ## 1. Required Context and Document Authority
 
-1. Before implementing or reviewing changes, read [docs/ARCH.md](docs/ARCH.md) for technical specifications and [PLAN.md](PLAN.md) for task state.
-2. Treat `AGENTS.md` as the authority for repository operating procedures, `docs/ARCH.md` for technical requirements, and `PLAN.md` for task tracking. These files do not override explicit user instructions or higher-priority agent instructions.
+1. Before implementing or reviewing changes, read [docs/ARCH.md](docs/ARCH.md) for technical specifications and [PLAN.md](PLAN.md) for goals and task state. Consult relevant entries in [docs/HISTORY.md](docs/HISTORY.md) for implementation context, previous verification and known limitations; do not treat historical results as current verification.
+2. Keep documentation in its authoritative location:
+
+   - `AGENTS.md`: repository operating procedures and documentation placement rules.
+   - `docs/ARCH.md`: architecture design, technical contracts, invariants, and design decisions with rationale/compatibility consequences. Do not put milestone results, implementation progress or verification reports here.
+   - `PLAN.md`: goals, prerequisites, acceptance criteria, task status and actionable blockers. Link to history for evidence; do not put execution diaries, test counts or verification reports here.
+   - `docs/HISTORY.md`: dated records of what was built/changed, concise requirement reviews, actual verification commands/results, permitted failures, compatibility changes and unresolved implementation limitations. Preserve previous results and dates; add a new entry for new work rather than rewriting old results as current.
+   - Other `docs/` guides: focused setup/usage instructions that reference these authorities rather than duplicating specifications, goals or history.
+
+   These files do not override explicit user instructions or higher-priority agent instructions.
 3. Supporting documentation must conform to the applicable operational and technical requirements. Do not infer an exception from an example or an existing implementation.
-4. Do not duplicate technical specifications or task checklists in this file. Reference their authoritative location.
+4. Do not duplicate technical specifications, task checklists or build history in this file. Reference their authoritative location. When work changes design, goals or implementation status, update the relevant document and keep cross-references consistent.
 5. When applicable technical requirements conflict, the agent may resolve the conflict autonomously. Before implementing affected behavior, document the conflicting requirements, chosen interpretation, rationale, and consequences in `docs/ARCH.md`. Update superseded statements so the specification remains internally consistent.
 6. When the current repository differs from the prescribed architecture, the agent may choose an adaptation or migration necessary for the authorized task. Document the rationale and compatibility implications before implementation. Do not undertake unrelated migrations.
 7. This autonomy does not expand the user-authorized scope or override explicit restrictions. If documentation edits are prohibited, report the decision and rationale without modifying files.
@@ -40,7 +48,7 @@ This repository implements the Ukrainian Semi-Supervised CRF POS Tagger.
 ### Three-Stage Protocol
 
 1. **Implement:** Identify applicable requirements and expected behavior, then implement one coherent change.
-2. **Review against the specification:** Before writing new tests, record a concise mapping of requirements to implemented behavior. Identify boundary conditions and failure cases. Resolve discrepancies before proceeding. This self-review is not proof of correctness.
+2. **Review against the specification:** Before writing new tests, record a concise mapping of requirements to implemented behavior in the task's `docs/HISTORY.md` entry. Identify boundary conditions and failure cases. Resolve discrepancies before proceeding. This self-review is not proof of correctness.
 3. **Test and verify:** Write tests with expected results derived from the specification, covering normal behavior, boundaries, and failures. Run focused tests during development and the full required checks before marking the task complete.
 
 Unit tests must use small, deterministic fixtures and must not require network access or production datasets. Shared fixtures belong in `tests/conftest.py`; fixtures used by one test module may remain local. Integration tests must be separately identifiable and document their dependencies.
@@ -49,27 +57,27 @@ Unit tests must use small, deterministic fixtures and must not require network a
 
 Run verification from the repository root through `uv`:
 
-| Check      | Command                                      |
-|------------|----------------------------------------------|
-| Lint       | `uv run ruff check .`                        |
-| Formatting | `uv run ruff format --check .`               |
-| Types      | `uv run mypy <documented-core-package-path>` |
-| Tests      | `uv run pytest tests/ -v`                    |
+| Check      | Command                       |
+|------------|-------------------------------|
+| Lint       | `uv run ruff check .`          |
+| Formatting | `uv run ruff format --check .` |
+| Types      | `uv run mypy src/crf/`         |
+| Tests      | `uv run pytest tests/ -v`      |
 
-The type-checking command is a template, not a literal shell command. Substitute the actual core package path before execution. The agent must establish missing tooling and replace this placeholder with the actual package path when configuring the project. Record each check's result. Never report an unavailable, skipped, or failing check as passed.
+These commands use the core package path defined in `docs/ARCH.md`. Establish missing tooling in the project environment; if the architecture changes that path, update this table accordingly. Record each check's actual command, date and result in `docs/HISTORY.md`. Never report an unavailable, skipped, or failing check as passed.
 
-Pre-existing failures outside the task's scope do not block completion when the agent provides evidence that they are unrelated and verifies the changed behavior. Record the failing checks, supporting evidence, and remaining limitations in `PLAN.md` and the final report. Do not weaken checks or modify unrelated code merely to obtain a passing result.
+Pre-existing failures outside the task's scope do not block completion when the agent provides evidence that they are unrelated and verifies the changed behavior. Record the failing checks, supporting evidence, and remaining limitations in `docs/HISTORY.md` and the final report; link that entry from the affected `PLAN.md` task. Do not weaken checks or modify unrelated code merely to obtain a passing result.
 
 If a failure prevents verification of the changed behavior, keep the task incomplete and report the blocker. Documentation-only and read-only tasks follow the applicability rules below.
 
 ## 5. Task Execution and Tracking
 
-1. For multi-step implementation tasks, read `PLAN.md` and add task-relevant steps before editing code. Preserve unrelated entries.
+1. For multi-step implementation tasks, read `PLAN.md` and add task-relevant goals/steps before editing code. Preserve unrelated entries. Keep execution notes and requirement reviews in the task's `docs/HISTORY.md` entry.
 2. Work in coherent increments. Verify each increment before beginning work that depends on it. Independent inspection and analysis may proceed concurrently.
-3. Mark a step `[x]` only when its acceptance criteria are met and applicable verification is complete. Document any permitted pre-existing verification failures beside the completed entry.
+3. Mark a step `[x]` only when its acceptance criteria are met and applicable verification is complete. Link its `docs/HISTORY.md` evidence from `PLAN.md`, including any permitted pre-existing verification-failure exception.
 4. Run focused checks between increments and all four required checks before completing a code-changing task, subject to the documented pre-existing-failure exception above.
-5. For documentation-only changes, verify references, consistency, and any affected command examples by inspection. Code verification is required only when executable behavior or configuration changes.
-6. Do not edit `PLAN.md` during read-only reviews. For a single-step change, update an existing relevant entry if present; creating a new tracking entry is optional.
+5. For documentation-only changes, verify references, consistency, and any affected command examples by inspection, and record the scope/result in `docs/HISTORY.md`. Code verification is required only when executable behavior or configuration changes.
+6. Do not edit `PLAN.md` or `docs/HISTORY.md` during read-only reviews. For a single-step change, update an existing relevant goal if present; creating a new tracking goal is optional.
 7. Report completed work, verification results, and unresolved limitations without claiming unperformed checks.
 
 ## 6. Git Protocol

@@ -1,6 +1,6 @@
 # Architecture and Technical Specifications
 
-This document defines the technical requirements, experiment design, data contracts, and guardrails for the Ukrainian semi-supervised CRF POS tagger. See [AGENTS.md](../AGENTS.md) for repository operating rules and [PLAN.md](../PLAN.md) for implementation task state. The prescribed architecture does not imply that its components have already been implemented or verified.
+This document defines the technical requirements, experiment design, data contracts, and guardrails for the Ukrainian semi-supervised CRF POS tagger. See [AGENTS.md](../AGENTS.md) for operating rules, [PLAN.md](../PLAN.md) for goals/status and [HISTORY.md](HISTORY.md) for implementation history and verification evidence. The prescribed architecture does not imply that its components have already been implemented or verified.
 
 ## 1. Project Overview & Goals
 
@@ -28,7 +28,7 @@ The project uses two main data sources:
 * **Loader output:** Emit one immutable sentence record containing its split, source path, sentence ordinal, original integer token IDs, original forms, aligned original UPOS labels, and aligned target labels. The target labels equal the original UPOS labels unless tag mapping is enabled below. Each included token must have exactly one original UPOS label and one target label. Retain `sent_id`, sentence text, and reconstruction metadata separately for provenance and auditing. Feature extraction receives surface forms without gold annotations; the contamination-audit interface exposes text and identifiers without labels.
 * **Failure behavior:** Fail on malformed gold records, sentences with no integer-ID words, or a missing final sentence delimiter. Report the source path, line number, and reason; never silently skip examples or repair original files. These are POS-loader checks, not a claim of complete dependency-tree validation.
 
-#### Gold parser implementation boundary (M3 task 1, 2026-10-28)
+#### Gold Parser Interfaces
 
 - `iter_gold_sentences()` in `crf.data.conllu` yields immutable `GoldSentence` parser outputs; `to_record()`/`iter_gold_records()` produce validated normalized `SentenceRecord` objects without publishing artifacts. Only dataset records expose feature forms. Test-label access requires `final_evaluation=True` before source access.
 - Parser and audit require a configured `InputIdentity` and repository root, verify opaque bytes before parsing and recheck at EOF. Exhaust iterators before accepting a source: later errors invalidate earlier yields.
@@ -53,11 +53,11 @@ The project uses two main data sources:
 * **Consistent target space:** Fix and record the mapping before model selection. Use it identically for `train_gold` training targets and `val_gold`/`test_gold` evaluation targets. Train both `CRF-Gate` and `CRF-Final` directly in the resulting target space; gate predictions, marginals, and pseudo-labels use that same space. Mapping changes require a new experiment, retraining both models, and regenerating pseudo-labels. Do not obtain mapped confidence scores by merely renaming labels or combining marginals from an unmapped gate.
 * **Reporting and compatibility:** Record the mapping and resulting target inventory with configurations, derived datasets, models, and evaluation reports. Report per-tag and aggregate metrics in that inventory. The example yields 14 target classes and cannot distinguish the four original service tags. Compare gate and final metrics only under the same mapping and identify consolidated-task results separately from the original 17-tag UPOS results. `FUNC` is a custom target label, not a valid standard UD UPOS value; do not write mapped labels into original gold files or present mapped output as standard UD UPOS annotation.
 
-#### Shared label-space implementation (M3 task 2, 2026-10-28)
+#### Target Label-Space Design
 
 - `crf.data.labels.TagMapping` centralizes immutable canonical entries, source validation/mapping, target validation and sorted inventory. `PipelineConfig.label_space`/`target_inventory` expose it; configuration keeps tuple entries and its existing serialized object. `crf.utils.config.UPOS`/`SERVICE_TAGS` remain compatible re-exports.
 - Reject duplicate/invalid direct tuple entries; custom targets preserve exact case/Unicode and require valid UTF-8 without whitespace/NUL or a UD-tag collision. Gold labels are validated before mapping; pseudo targets are checked directly, never remapped. Audits do not access label-space logic.
-- Preserve original forms/labels/files. Configuration failures remain `ConfigError`, dataset failures `ValidationError`, and gold-row failures retain path/line diagnostics. Existing configuration hashes and dataset target arrays preserve mapping identity without schema changes; derive inventory from configuration. Future model/metric/prediction metadata must persist/check that inventory. No post-hoc mapped predictions or confidence aggregation is provided.
+- Preserve original forms/labels/files. Configuration failures remain `ConfigError`, dataset failures `ValidationError`, and gold-row failures retain path/line diagnostics. Existing configuration hashes and dataset target arrays preserve mapping identity without schema changes; derive inventory from configuration. Model/metric/prediction metadata must persist/check that inventory. No post-hoc mapped predictions or confidence aggregation is provided.
 
 ### Core Methodology: Two-Stage Self-Training Workflow
 1. **Stage 1 — Baseline (`CRF-Gate`):**
@@ -213,11 +213,11 @@ The CRF pipeline uses the `src/` layout with its core package at `src/crf/`, imp
 
 The existing exploratory files under `postag/` are no longer required interfaces and may be moved or replaced during implementation. This migration establishes one core package that follows the contracts in this document rather than preserving incompatible legacy behavior. Update affected callers and tests with the migration; legacy feature representations and model artifacts are not interchangeable with the new schema without explicit verification. Existing files may remain while the migration is incomplete, but the new pipeline must use `crf`. The blueprint specifies the target layout, not a claim that migration has already occurred.
 
-### Milestone 1 Migration Decision (2026-10-28)
+### Legacy Interface Compatibility
 
-Replace legacy corpus-frequency/±1 features, SVD/clustering and whole-file spaCy tokenization with `crf`: they conflict with the prescribed dictionary features and bounded preprocessing. Legacy imports, keys, CLI switches and exploratory model artifacts are unsupported; CRFsuite consumes dictionaries directly.
+Use one `crf` production interface with dictionary features and bounded preprocessing. Legacy imports, keys, CLI switches and exploratory model artifacts are unsupported because corpus-frequency/±1 features, SVD/clustering and whole-file spaCy processing conflict with those contracts.
 
-The low-level tokenizer uses non-legacy upstream spans on a supplied paragraph and preserves original slices. Aligned normalization integration, UD boundaries, bounded file streaming, exclusions and provenance remain M4 work. The preview writes text-only JSON to stdout; it creates no training artifacts and does not replace pipeline/prediction CLIs.
+Keep the low-level tokenizer/preview separate from the production adapter. It accepts one supplied paragraph, uses non-legacy upstream spans and preserves original slices; the preview emits text-only JSON to stdout without training artifacts. The production adapter must integrate aligned normalization, UD boundaries, bounded file streaming, exclusions and provenance. Migration history is in [HISTORY.md](HISTORY.md#milestone-1).
 
 ## 3. Artifact & Run Contracts
 
@@ -235,7 +235,7 @@ Generate a unique `run_id` automatically. Write each run into new directories; r
 
 Reused models reference their existing candidate IDs; do not create records claiming another fit occurred. Keep models on disk between fits rather than retaining all candidate estimators in memory.
 
-### Run Lifecycle Foundation (2026-10-28)
+### Run Lifecycle Design
 
 - `allocate_run()` reserves UUID-based ASCII IDs across all artifact trees, retrying collisions without reuse. Development creates report/interim/processed/model directories; prediction creates reports only. Partial failures leave incomplete directories, with no automatic resume/rollback. Random run IDs do not affect seeded data/model ordering.
 - Writers traverse directories without following symlinks, stage fresh temporary files, flush/fsync and validate them, then hard-link the final name without replacement. Concurrent writers have one winner; preserve existing files/directories/links and clean only the writer's temporary entry. Unsupported POSIX operations fail explicitly. This guards ordinary races/path redirection, not hostile repository renaming or guaranteed power-loss durability.
@@ -290,12 +290,12 @@ All token-aligned arrays have the same nonzero length, including `original_upos`
 
 Create `test_gold` dataset records only during final evaluation. The earlier contamination audit uses its separate text-and-identifier interface without constructing records containing held-out labels. This dataset schema covers gold and pseudo-label training/evaluation inputs; standalone prediction outputs follow the separate prediction contract.
 
-#### Dataset and identity validation boundary (2026-10-28)
+#### Dataset and Identity Interfaces
 
 - Immutable `SentenceRecord`, `PseudoMetadata` and `InputIdentity` use validated factories. Dataset validation requires configuration/input identity and original decoded length for any non-null span; never infer offsets from sentence text/annotation rows. IDs are `1..N`, spans remain ordered/disjoint across nulls, features receive only `feature_forms`, and test records require final-evaluation opt-in.
 - Validate schema, mapping/inventory, provenance IDs, input bindings, seed-derived priorities and exact shared normalization of original forms. Fingerprint/gate hashes are syntax-checked here; content/model verification belongs to contamination/model stages. Loader comments/reconstruction metadata stay separate.
 - Strict JSON rejects nested duplicate keys, nonfinite/overflowing numbers, BOMs and invalid Unicode. JSONL streams objects with path/line diagnostics, rejecting blank lines/CRLF; a final object may omit LF on input, but encoders always append it. Encoders return bytes without publishing files; lifecycle helpers own publication, and later stages own their specific schemas.
-- Discover identities in gold-role order, then flat filename-sorted eligible literature. Validate paths/symlinks, ignore directories/non-`.txt` entries, reject physical gold aliases and empty literature. Hash bounded original-byte chunks, treating test content as opaque; check metadata before/after and reject observed changes. This is best-effort consistency, not a snapshot. `verify_input_identity()` rechecks disk bytes; content overlap/known-source audits remain M4 work.
+- Discover identities in gold-role order, then flat filename-sorted eligible literature. Validate paths/symlinks, ignore directories/non-`.txt` entries, reject physical gold aliases and empty literature. Hash bounded original-byte chunks, treating test content as opaque; check metadata before/after and reject observed changes. This is best-effort consistency, not a snapshot. `verify_input_identity()` rechecks disk bytes; content overlap/known-source audits are separate preprocessing responsibilities.
 
 ### Model Bundles
 
@@ -468,11 +468,11 @@ Counts are nonnegative integers and must match the output records. A successful 
 
 All run metadata is generated automatically; changing the literature corpus does not require a manually maintained manifest.
 
-## 4. Environment & Verification Contract
+## 4. Environment & Packaging Contract
 
 Declare direct runtime dependencies and development tools in `pyproject.toml`; reproduce the environment with `uv.lock` in the project-local environment. Include Ruff, mypy, and pytest as project development tools. Keep Ruff configuration in `pyproject.toml`, target Python 3.14, and document material lint-rule choices. See the [uv project structure reference](https://docs.astral.sh/uv/concepts/projects/layout/).
 
-The locked environment uses CPython 3.14.6/macOS arm64, `tokenize-uk==2.0.0` without spaCy, `python-crfsuite==0.9.12` and `sklearn-crfsuite==0.5.0`; reproduce it with `uv sync --locked`. Historical compatibility results are recorded in [PLAN.md](../PLAN.md#verification-record), not evidence of real-corpus or cross-platform reproducibility.
+Select compatible dependency versions through `pyproject.toml` and `uv.lock`; reproduce the environment with `uv sync --locked`. Environment acceptance requires imports, a tiny CRF fit/marginal/persistence round trip and an isolated installed-package import. These checks do not establish real-corpus or cross-platform reproducibility; execution evidence belongs in [HISTORY.md](HISTORY.md#verification-record).
 
 Ruff enables essential syntax/error checks (`E4`, `E7`, `E9`, `F`), import ordering
 (`I`), Python modernization (`UP`), and common correctness pitfalls (`B`).
@@ -482,24 +482,15 @@ integration tests carry an explicit marker and document their dependencies.
 `src/crf/py.typed` marks the installed package as typed. The Hatch build backend
 packages only `src/crf/`.
 
-The selected runtime is a target until the environment has been established and compatibility verified. Do not claim the existing environment has been upgraded merely because this specification has changed. Seeds control applicable random operations but do not guarantee identical floating-point results across platforms or dependency versions; record the effective environment and any observed nondeterminism.
+Seeds control applicable random operations but cannot guarantee identical floating-point results across platforms/dependency versions. Record the effective environment and observed nondeterminism with run artifacts.
 
 Before producing artifacts, configure `.gitignore` to exclude generated datasets, model bundles, and run outputs. Original datasets remain immutable and generated artifacts must not be staged or committed, except for intentional small test fixtures permitted by the repository operating rules.
 
-Run the following separate checks from the repository root when implementing executable behavior or configuration:
+The required verification workflow and concrete commands are defined in [AGENTS.md](../AGENTS.md#4-verification-and-test-generation); dated results belong in [HISTORY.md](HISTORY.md#verification-record).
 
-| Check      | Command                        |
-|------------|--------------------------------|
-| Lint       | `uv run ruff check .`          |
-| Formatting | `uv run ruff format --check .` |
-| Types      | `uv run mypy src/crf/`         |
-| Tests      | `uv run pytest tests/ -v`      |
+### IDE Environment Design
 
-Record each check's actual result. Runtime compatibility and the package migration are not complete until applicable verification has been performed. Documentation-only changes are verified by inspection under `AGENTS.md` and do not establish that these executable checks have passed.
-
-### PyCharm Integration Decision (2026-10-28)
-
-Use the project-local native uv SDK and inherited project interpreter; packaging/runtime authority remains `pyproject.toml`, `.python-version` and `uv.lock`. Disable the IDE's `usePyprojectToml` module model because it regenerated roots relative to `.idea` and lost explicit roots/exclusions; maintain those roots explicitly. See [PyCharm setup](PYCHARM.md).
+Use the project-local native uv SDK and inherited project interpreter; packaging/runtime authority remains `pyproject.toml`, `.python-version` and `uv.lock`. Disable the IDE's `usePyprojectToml` module model and maintain explicit source/test roots and exclusions to keep IDE layout aligned with the repository. See [PyCharm setup](PYCHARM.md) and [setup history](HISTORY.md#pycharm-environment).
 
 ### CLI & Configuration Contract
 
@@ -534,11 +525,11 @@ Reject unknown keys, incorrect types, nonfinite numeric values, empty required s
 
 For development, apply precedence in this order: documented defaults, YAML values, then an explicitly supplied `--seed`. An omitted CLI seed does not overwrite the configured seed. Record the complete effective configuration automatically. The pipeline seed controls applicable training/sampling operations; the bootstrap uses the separately recorded `evaluation.bootstrap_seed`.
 
-#### Configuration validation implementation decisions (2026-10-28)
+#### Configuration Validation Design
 
 - `load_config(path, repository_root=..., seed=None)` resolves against the explicit repository root. Immutable corpus paths are repository-relative `Path` values; `to_dict()` emits complete settings with POSIX paths and array grids. Numeric settings accept integers/floats and normalize to floats; integer fields require integers. Neither accepts booleans. Reject merge keys, recursive aliases, non-string keys and non-plain values; allow harmless nonrecursive aliases. Only version 1 schemas/preprocessing/features are supported.
 - CRF domains: `max_iterations >= 0` (zero is unlimited), positive `num_memories`/`period`, finite nonnegative `epsilon`/`delta`/`min_freq`, boolean expansion switches. Overrides define separate experiments; defaults retain 36 configurations. Source codecs must support incremental text decoding.
-- Loading checks existing `.conllu` gold files under `data/raw/gold/` with distinct device/inode identities (including hard links), and existing nonsymlinked `data/raw/literature/`. Roots remain inside the repository and disjoint; no labels are read. `parse_config()` checks settings/path syntax without requiring corpora, supporting standalone metadata. Development must call `load_config()` or `validate_input_paths()`; content eligibility/auditing remains M4 work.
+- Loading checks existing `.conllu` gold files under `data/raw/gold/` with distinct device/inode identities (including hard links), and existing nonsymlinked `data/raw/literature/`. Roots remain inside the repository and disjoint; no labels are read. `parse_config()` checks settings/path syntax without requiring corpora, supporting standalone metadata. Development must call `load_config()` or `validate_input_paths()`; content eligibility/auditing is a separate preprocessing responsibility.
 - `resolve_cli_path()` permits external standalone inputs. `validate_output_path()` checks fresh prescribed artifact paths and rejects existing/dangling entries, symlinked ancestors, escapes and raw destinations; it allocates nothing. Lifecycle helpers supply race-safe publication.
 
 Freeze effective configuration, input identities, dataset identities, preprocessing versions, selected model references, and evaluation settings only after every planned configuration has a successful fitted or permitted reused result. Evaluation accepts no new configuration or parameter overrides. Its `--seed`, when supplied, is an assertion that must equal the frozen bootstrap seed; when omitted, use that frozen seed. Reject an incomplete experiment, changed inputs, incompatible preprocessing/dependencies, or a model/checksum mismatch before computing test predictions. If evaluation already completed, verify and return the stored results without recomputing them. Never overwrite partial or completed evaluation artifacts or present a failed attempt as complete.
@@ -563,9 +554,9 @@ Changing literature inputs is supported by starting a new development run, with 
 * **Cyrillic preservation:** Preserve Ukrainian letter distinctions, including `г/ґ`, `и/і`, `е/є`, and `і/ї`, and preserve the soft sign. Do not transliterate or replace Latin/Cyrillic lookalikes. Do not silently strip combining stress marks, soft hyphens, or zero-width characters; retain them and report occurrences of formatting characters.
 * **Casing before lexical lowercasing:** Compute `is_title`, `is_uppercase`, and `is_lowercase` on the normalized, case-preserving token using Python's Unicode-aware `istitle()`, `isupper()`, and `islower()`. These flags are independent. Then derive the lexical feature form by lowercasing and applying NFC again. Do not lowercase text before sentence segmentation. For example, `ҐАНОК` keeps its uppercase flag while its lexical feature form becomes `ґанок`. See [Python string operations](https://docs.python.org/3/library/stdtypes.html).
 
-#### Versioned normalizer and source alignment (M3 task 3, 2026-10-28)
+#### Normalization and Source Alignment Design
 
-- `crf.data.normalization` version 1 records the running Unicode database version. `normalize_text()` takes a complete decoded paragraph/bounded unit and nonnegative absolute `source_offset`; it removes one BOM only at file offset zero and applies the ordered transformations above without lowercasing/collapsing whitespace. M4 streaming must assemble paragraphs without splitting CRLF or normalization units. The low-level tokenizer/preview is not that production adapter.
+- `crf.data.normalization` version 1 records the running Unicode database version. `normalize_text()` takes a complete decoded paragraph/bounded unit and nonnegative absolute `source_offset`; it removes one BOM only at file offset zero and applies the ordered transformations above without lowercasing/collapsing whitespace. Raw-text streaming must assemble paragraphs without splitting CRLF or normalization units. The low-level tokenizer/preview is not that production adapter.
 - Immutable results retain original/normalized text, per-character absolute source intervals, formatting observations and versions. Each output character maps conservatively to its entire NFC unit (starter/combining marks and interacting zero-class compositions, including Hangul), covering composition, expansion and reordering. `source_span(start, end)` projects nonempty in-bounds normalized intervals to original end-exclusive code-point spans, rejecting cuts inside units. CRLF maps to both characters; removed BOMs lie outside projected text. Adjacent projected tokens cannot overlap or lose combining marks.
 - `normalize_form()` preserves a form's leading BOM and token boundary; `normalize_forms()` preserves order/length. The old surface-module import remains a re-export. Casing uses normalized forms; `lexical_form()` lowercases and reapplies NFC without case folding.
 - Preserve `Cf` characters except the permitted file-start BOM. Results record every original offset/removal flag; raw/form normalization logs a summary. Stress marks remain under NFC. Empty raw text is valid; empty forms, invalid scalars, boolean/noninteger/negative offsets and unsupported versions fail. No filtering, truncation, filesystem access or corpus statistics occurs here.
@@ -593,12 +584,12 @@ Affix lengths count Unicode code points after lexical normalization. Emit an aff
 * **Context and boundaries:** For offsets `-2`, `-1`, `+1`, and `+2`, include the neighboring token's `word.lower` and six shape flags, prefixed with the offset, for example `-1:word.lower` and `+1:is_uppercase`. Do not copy neighboring affixes or bias terms. If a neighbor lies outside the sentence, emit only its boundary flag, for example `-1:BOS = True` or `+2:EOS = True`. Never cross sentence boundaries.
 * **Versioning and vocabulary behavior:** Use the same recorded feature-schema version and extraction configuration for both models and every pipeline stage. The initial schema contains no learned vocabulary mapping or IDF features. Emit unseen lexical strings normally; do not fit preprocessing on validation or test data. Reject unsupported keys, value types, and nonfinite numeric values.
 
-#### Feature schema implementation (M3 task 4, 2026-10-29)
+#### Feature Validation Design
 
-- `crf.features.schema` owns version 1, aliases, affix/context constants and validation; configuration shares its version check. `sentence_features(forms, schema_version=1, normalizer_version=1)` preserves default calls. Versions are keyword-only and future callers must pass recorded settings; they cannot change the window/features. Existing surface-module alias/normalizer imports remain compatible; no dependency or wire-format change is required.
+- `crf.features.schema` owns version 1, aliases, affix/context constants and validation; configuration shares its version check. `sentence_features(forms, schema_version=1, normalizer_version=1)` preserves default calls. Versions are keyword-only and training/inference callers must pass recorded settings; they cannot change the window/features. Existing surface-module alias/normalizer imports remain compatible; no dependency or wire-format change is required.
 - Accept only nonempty ordered surface-string sequences; reject sentence strings, mappings, generators, token-label pairs and annotation-bearing records. Shared normalization snapshots forms before shape computation. Each token/call gets an independent mutable dictionary because CRFsuite needs dynamic affix/boundary mappings; there is no vocabulary fitting, shared cache or corpus state. Consumers pass only `SentenceRecord.feature_forms`.
 - `validate_sentence_features()` returns copies of a nonempty mapping sequence without coercion/drop. Enforce exact position/length-dependent keys, strict string/boolean/finite-float values, `bias: 1.0`, true boundary flags, normalized lexical forms, affix contents and neighbor agreement. Context has lexical/six-flag data or one boundary flag, never both or neighbor affixes/bias. Reject unknown/missing keys, invalid Unicode, nonfinite floats and numeric booleans with token/key diagnostics. Internal consistency cannot recover original casing; the extractor computes shape semantics from normalized surface forms.
-- Extraction/validation raise `FeatureSchemaError` (`ValueError`); configuration raises `ConfigError`. Production tokenizer compatibility and later pipeline stages remain separate work; completion evidence belongs in [PLAN.md](../PLAN.md#verification-record).
+- Extraction/validation raise `FeatureSchemaError` (`ValueError`); configuration raises `ConfigError`. Tokenizer/corpus compatibility is a separate acceptance gate; execution evidence belongs in [HISTORY.md](HISTORY.md#verification-record).
 
 ### Strict Test Data Isolation & Leakage Prevention
 

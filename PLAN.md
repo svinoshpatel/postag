@@ -1,36 +1,36 @@
 # Sprint Plan
 
-See [AGENTS.md](AGENTS.md) for operating procedures and [docs/ARCH.md](docs/ARCH.md) for authoritative technical requirements. This plan tracks implementation and verification; it does not replace the architecture contracts. All implementation items remain unchecked until their acceptance criteria and applicable checks are satisfied.
+Goals, prerequisites, acceptance criteria and task status. See [AGENTS.md](AGENTS.md) for operating procedures, [docs/ARCH.md](docs/ARCH.md) for design/contracts and [docs/HISTORY.md](docs/HISTORY.md) for build history and verification evidence. Mark goals complete only after acceptance and applicable verification.
 
-## Sprint Goal and Current State
+## Sprint Goal and Progress
 
 Implement a reproducible Ukrainian CRF self-training pipeline with isolated development and final evaluation, usable raw-text inference, and validated run artifacts. Preserve the approved experiment design and original datasets.
 
-Milestone 1 is implemented: the locked CPython 3.14 environment and installable `src/crf/` foundations replace the incompatible `postag/` experiments. Milestone 2 is implemented: strict configuration, typed records and identities, safe artifact publication, logging, and resource monitoring are verified. Milestone 3 is implemented: gold parsing, shared target mapping, aligned normalization and strict sentence-bounded features are verified with offline fixtures. Later milestones remain unchecked. These components do not establish a complete raw-text preprocessing or training pipeline.
+Completed goals: M1–M3 (fixture-based acceptance). Next: M4 literature streaming and contamination controls. Production-corpus readiness and end-to-end pipeline completion remain separate goals; evidence is in [HISTORY.md](docs/HISTORY.md).
 
 Gold-corpus availability, release identity, and compatibility checks are pending. Small deterministic fixtures support implementation and offline verification without production data. Full corpus runs have a separate readiness gate below; missing inputs must not be replaced with another split or fabricated data. No sprint duration or delivery estimate is assumed.
 
 ## Ordered Implementation Milestones
 
-Work in coherent increments. Before writing new tests for each increment, record the requirement-to-behavior mapping and boundary/failure cases, then resolve discrepancies. Run focused verification before dependent work and record results here. Independent implementation tasks may proceed once their prerequisites are met.
+Milestones follow the prerequisites below. Execution procedures are in AGENTS.md; requirement reviews and verification records belong in HISTORY.md.
 
 ### 1. Establish the Environment and Core Package
 
-Architecture: [Core Package and Migration Boundary](docs/ARCH.md#core-package-and-migration-boundary) and [Environment & Verification Contract](docs/ARCH.md).
+Architecture: [Core Package and Migration Boundary](docs/ARCH.md#core-package-and-migration-boundary) and [Environment & Packaging Contract](docs/ARCH.md#4-environment--packaging-contract).
 
 - [x] Establish the prescribed CPython/`uv` environment, dependency declarations, lockfile, interpreter selection, and Ruff/mypy/pytest configuration. Acceptance: dependency compatibility is demonstrated and all four verification tools are runnable from the repository root.
 - [x] Create installable `src/crf/` packaging and migrate or replace relevant `postag/` logic and affected tests/callers. Acceptance: pipeline imports use `crf`; reusable logic resides in the core, with no dependency on importing `src` as a package or preserving incompatible exploratory behavior.
 - [x] Add required generated-artifact exclusions before producing datasets, models, or reports. Acceptance: immutable inputs and existing artifacts are protected; intentional test fixtures remain identifiable.
 
-Verified 2026-10-28: 20 tests and strict types (7 core files) pass; environment imports, packaging and tiny CRF persistence were checked. Review covered migration compatibility, surface-only features and tokenizer spans. Repository lint/format retain the unrelated failure recorded below; no production experiment was run.
+Evidence: [M1 history](docs/HISTORY.md#milestone-1), including the permitted [lint/format exception](docs/HISTORY.md#recorded-limitations).
 
-#### PyCharm environment follow-up (2026-10-28)
+#### PyCharm Environment Goals
 
 - [x] Align project/module roots and inherited interpreter with the uv-managed Python 3.14 environment; preserve existing project-model changes.
 - [x] Register the existing environment as a native uv SDK, add current preview/test run configurations, and document reload/setup behavior.
 - [x] Validate XML/path references, interpreter/import compatibility, and all four required checks; record IDE validation limits and pre-existing failures.
 
-Verified XML/paths, native uv SDK/imports and preview CLI; disabled the IDE module model that rewrote roots. SDK backup preserved; restart required to reload changes. UI Run/Debug/indexing remain unverified (connection timeouts). See [PyCharm setup](docs/PYCHARM.md).
+Evidence and remaining UI-validation limit: [PyCharm history](docs/HISTORY.md#pycharm-environment).
 
 ### 2. Implement Shared Configuration, Artifact, and Resource Foundations
 
@@ -40,13 +40,7 @@ Prerequisite: milestone 1. Architecture: [Artifact & Run Contracts](docs/ARCH.md
 - [x] Implement typed sentence records, JSON/JSONL validators, canonical configuration hashing, deterministic sentence identities, and automatic input identities. Acceptance: exact schema fields, types, checksums, alignment, and nullability are enforced without exposing labels to feature code.
 - [x] Implement unique output allocation, publish-once completion handling, logging, and aggregate RSS monitoring. Acceptance: existing artifacts and raw inputs cannot be overwritten, diagnostics remain on stderr, budget violations fail, and incomplete runs cannot be treated as successful.
 
-Completed 2026-10-28 with temporary offline fixtures; changed-code lint/format passed, with the repository-wide exception below. Reviews/tests covered strict configuration/path boundaries, schema/identity/hash integrity, no-clobber lifecycle races and sticky RSS failures. Stage-specific validators and pipeline integration remain later work.
-
-| Task | New tests | Full suite | Typed core files |
-|---|---:|---:|---:|
-| Configuration/paths | 88 | 108 | 9 |
-| Records/serialization/identity | 119 | 227 | 12 |
-| Lifecycle/logging/resources | 47 | 274 | 15 |
+Evidence: [M2 history](docs/HISTORY.md#milestone-2), including the permitted [lint/format exception](docs/HISTORY.md#recorded-limitations).
 
 ### 3. Implement Gold Parsing, Target Mapping, and Features
 
@@ -57,16 +51,7 @@ Prerequisites: milestones 1–2. Architecture: [Gold CoNLL-U Input Contract](doc
 - [x] Implement the shared versioned normalizer with source alignment. Acceptance: apostrophes, Unicode normalization, casing, whitespace, and Cyrillic preservation match the architecture, with original forms retained.
 - [x] Implement the feature dictionary schema and sentence-bounded context extraction. Acceptance: feature names/types, affix lengths, casing/shape flags, boundary flags, unseen forms, and annotation exclusion match the specification.
 
-Completed with offline fixtures; changed-code lint/format passed at every step, with the repository-wide exception below. Pre-test reviews covered parser/audit isolation, source/target inventory consistency, normalization/alignment and exact feature/context schemas. Compatibility boundaries and remaining integration work are specified in ARCH.md.
-
-| Task | Date | New tests | Full suite | Typed core files |
-|---|---|---:|---:|---:|
-| Gold parser/audit | 2026-10-28 | 59 | 333 | 16 |
-| Shared tag mapping | 2026-10-28 | 89 | 422 | 17 |
-| Aligned normalization/record conversion | 2026-10-28 | 73 | 495 | 18 |
-| Feature schema/context | 2026-10-29 | 99 | 594 | 19 |
-
-M3 is complete for fixture-based acceptance; real-corpus readiness, the production raw-text/UD adapter and model/orchestration stages remain pending. Original inputs/artifacts and unrelated `main.py` state were preserved; no real-corpus training/evaluation is claimed.
+Evidence: [M3 history](docs/HISTORY.md#milestone-3), including the permitted [lint/format exception](docs/HISTORY.md#recorded-limitations).
 
 ### 4. Implement Literature Streaming and Contamination Controls
 
@@ -113,7 +98,7 @@ Prerequisites: milestones 5–7 for final evaluation; milestones 2–5 for stand
 Prerequisites: milestones 1–8. Architecture: [Technical Verification Invariants](docs/ARCH.md#technical-verification-invariants); operating procedure: [Verification and Test Generation](AGENTS.md#4-verification-and-test-generation).
 
 - [ ] Add and run deterministic integration coverage using small, intentional fixtures. Acceptance: the full develop/freeze/evaluate/predict flow, default search accounting, empty augmentation, isolation boundaries, schema/checksum rejection, and incomplete-output behavior are verified without production data or network access. Integration dependencies are documented.
-- [ ] Run all four required checks and record actual results below. Acceptance: changed behavior is verified; any permitted unrelated pre-existing failures have evidence and are recorded beside affected completed tasks. Unavailable or skipped checks are never marked passed.
+- [ ] Run all four required checks and record actual results in [HISTORY.md](docs/HISTORY.md#verification-record). Acceptance: changed behavior is verified; any permitted unrelated pre-existing failures have evidence linked from affected completed tasks. Unavailable or skipped checks are never marked passed.
 - [ ] Review implemented behavior against the complete architecture and document remaining nondeterminism or compatibility limitations. Acceptance: no required implementation work is hidden behind unchecked corpus-experiment results or unverified assumptions.
 
 ## Corpus Readiness and Experiment Gate
@@ -124,19 +109,8 @@ These items are separate from fixture-based implementation acceptance. Do not ma
 - [ ] Execute the frozen development search on real inputs. Acceptance: all planned trial outcomes, selected datasets/models, diagnostics, resource observations, and completion links are valid; actual fits versus reused results are distinguished. Leave test results unopened.
 - [ ] Freeze the real experiment and perform final comparative evaluation. Acceptance: gate/final/control reports, paired bootstrap, signed differences, provenance, and completion checksums are valid; test results do not trigger further model selection. Reused baseline results are not reported as augmentation gains.
 
-## Verification Record
+## Next Priorities and Blockers
 
-Latest code checks: 2026-10-29, CPython 3.14.6/macOS arm64. Historical results below were not rerun for the documentation compaction on 2026-10-30; references, task state and scoped diffs were checked.
-
-| Check | Command | Current result |
-|---|---|---|
-| Lint | `uv run ruff check .` | Failed: unchanged `scripts/fetch_dictionary.py` I001; changed-code lint passed |
-| Formatting | `uv run ruff format --check .` | Failed: unchanged `scripts/fetch_dictionary.py` requires formatting; changed-code formatting passed |
-| Types | `uv run mypy src/crf/` | Passed (2026-10-29): 19 source files |
-| Tests | `uv run pytest tests/ -v` | Passed (2026-10-29): 594 tests, including 110 feature tests, 73 normalization/record cases, 89 shared label-space tests, 59 gold parser/audit tests and two offline integration tests |
-
-## Open Dependencies and Blockers
-
-- Runtime imports, `uv lock --check`/`uv pip check`, isolated editable imports, wheel/sdist contents and artifact ignore rules were verified during M1–M2. Tiny offline CRF fitting/marginal/joblib checks passed; cross-platform bitwise reproducibility is not claimed.
-- Lint/format exception: unchanged `scripts/fetch_dictionary.py` fails I001 and formatting, reproduced before/after implementation. Changed-code checks pass; no checks were weakened. Existing `AD main.py` state remains untouched.
-- Official gold availability/release identity, source separation and tokenizer compatibility remain unverified. M4 must handle upstream standalone formatting-character omissions, UD boundaries and aligned normalization with bounded paragraph streaming. No production training or final evaluation has run.
+- Complete the M4 raw-text/UD adapter: bounded paragraph streaming, aligned normalization, UD boundaries and formatting-character preservation; then implement contamination controls.
+- Establish official gold availability/release identity, literature source separation and tokenizer compatibility before real-corpus experiments.
+- Resolve or explicitly account for the unrelated Ruff failures before completing affected goals; see [recorded limitations](docs/HISTORY.md#recorded-limitations). Historical verification results are in [HISTORY.md](docs/HISTORY.md#verification-record).
