@@ -72,6 +72,33 @@ Tests cover one-byte reads, three newline styles, EOF, BOM/normalization alignme
 
 Limitations: tokenizer compatibility with the official selected gold release remains a corpus-readiness gate. No production corpus was processed, no training/evaluation ran, and no run metadata was published. Contamination/deduplication/known-source/MWT policy and aggregate-monitor integration remain M4 tasks 2–3; callers must exhaust preprocessing iterators and collect their exclusion events before publishing successful outputs.
 
+## M4 Task 2 — Contamination Controls
+
+**2026-10-30 — Complete for fixture-based acceptance.** Added `crf.data.contamination`: a text-only contamination layer with immutable decisions/reports, single-use mutable SQLite audit state, no-clobber intermediate allocation and automatic source/configuration/preprocessing identities. No dependency, configuration-schema or existing reader/record API changes were required. A committed `e.compile` typo prevented adapter imports; reproduced with the existing segmentation test module and repaired to `re.compile`. The existing 86 reader/adapter tests passed after that repair.
+
+Pre-test specification review:
+
+- Fingerprints → shared versioned normalization followed by Unicode whitespace collapse/trim and exact SHA-256 of UTF-8; preserve case, punctuation, stress/formatting characters and embedded BOMs. Reject empty/unsupported inputs. Use supplied gold text or the audit reader's surface reconstruction, never a syntactic-word join.
+- Gold isolation → exhaust `iter_gold_audit()` for all three splits before filtering; only text/identifiers/spacing are exposed. Store exact-overlap fingerprints per split; harvest MWT boundary patterns only from train range rows. No labeled loader, target mapping, predictions or metrics are used. Gold raw limits never apply.
+- Streaming/order → disk-backed gold/MWT/seen indexes with bounded SQLite cache; process filename/sentence order from captured input identities. Retain the first otherwise eligible occurrence. Whole-source evidence rules precede raw limits, exact overlaps, train MWT patterns and duplicate decisions. Excluded candidates do not reserve duplicate slots.
+- Source/MWT policy → validate explicit literature paths, held-out split references and evidence; freeze canonical rules in metadata. Known-source files are excluded in full without decoding. Match train MWT normalized token sequences across punctuation spacing, preserving case and word boundaries; do not expand surfaces or harvest held-out MWT patterns. Near duplicates and unresolved provenance remain disclosed.
+- Lifecycle/diagnostics → reserve a fresh index under `data/interim/<run_id>/`, already covered by `.gitignore`; preserve existing artifacts and all raw inputs. Incrementally emit reason/split/MWT/duplicate/evidence diagnostics and original resource events. Reports include counts, text/byte volumes, source checksums, versions/configuration hash and deterministic accepted-corpus identity only after final source-set verification. SQLite errors, malformed gold, changed/added inputs, early termination and reuse/closed-state access must not authorize success.
+
+Verification on CPython 3.14.6/macOS arm64. Every command used the task-local `UV_CACHE_DIR=/private/tmp/postag-uv-cache` prefix with the existing locked environment:
+
+| Check | Actual command (after cache prefix) | Result |
+|---|---|---|
+| Focused | `uv run --frozen pytest tests/test_contamination.py tests/test_literature.py tests/test_segmentation.py -q` | Passed: 144 cases, including 58 new contamination cases |
+| Lint | `uv run --frozen ruff check .` | Failed: unchanged `scripts/fetch_dictionary.py` I001; reproduced before/after implementation |
+| Formatting | `uv run --frozen ruff format --check .` | Failed: unchanged `scripts/fetch_dictionary.py`; other 45 Python files passed |
+| Types | `uv run --frozen mypy src/crf/` | Passed: 22 source files |
+| Tests | `uv run --frozen pytest tests/ -v` | Passed: 738 tests outside the sandbox, retaining access needed by the existing RSS smoke test |
+| Changed-code lint/format | `uv run --frozen ruff check src/crf/data/contamination.py src/crf/data/segmentation.py tests/test_contamination.py` and the same paths with `ruff format --check` | Passed: all three changed Python files |
+
+Tests verified exact normalization/hash expectations, case/punctuation/formatting distinctions, all-split overlap, supplied-text precedence and MWT reconstruction/empty-node omission, invalid annotations left uninterpreted, train-only boundary-aware MWT matching, known-source skipping without decoding/dedup slot consumption, deterministic reports and first occurrences, rule/evidence/config/input identities, exclusion volume, fresh indexes, protected existing outputs/symlinks, raw-limit passthrough, single-use/early-close lifecycle, malformed gold, decoding/SQLite errors and changed/added/removed inputs. Initial fixtures that assumed a lowercase word after a period would force a sentence boundary were corrected to use explicit paragraph delimiters after inspecting the existing backend output; segmentation rules were not tuned to the fixtures.
+
+Scoped diffs confirm the dictionary script, memory monitor/tests and pre-existing `AD main.py` state were untouched. New indexes were produced only in temporary offline test repositories; `.gitignore` already covers their prescribed `data/interim/` location. No production corpus, model inference/training or final evaluation has run. Raw standalone inference remains unfiltered. Run-report publication and aggregate-monitor integration remain with later orchestration/M4 resource work. Official source provenance and residual near-duplicate/tokenizer limitations remain corpus-readiness gates.
+
 ## Verification Record
 
 M1–M3 code checks: 2026-10-29, CPython 3.14.6/macOS arm64. These historical results were not rerun for the documentation compaction on 2026-10-30; references, task state and scoped diffs were checked. New code verification is recorded in [M4 task 1](#m4-task-1--literature-reader-and-ud-adapter).

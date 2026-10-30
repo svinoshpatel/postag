@@ -14,7 +14,7 @@ from crf.utils.serialization import ValidationError
 TOKENIZER_ADAPTER_VERSION = 1
 TOKENIZER_PACKAGE_VERSION = "2.0.0"
 SENTENCE_LANGUAGE = "uk_two"
-_DIGIT_GROUP = e.compile(r"(?<![\w.,])[0-9]{1,3}(?: [0-9]{3})+(?:[.,][0-9]+)?(?!\w)")
+_DIGIT_GROUP = re.compile(r"(?<![\w.,])[0-9]{1,3}(?: [0-9]{3})+(?:[.,][0-9]+)?(?!\w)")
 
 
 @dataclass(frozen=True)

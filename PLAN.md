@@ -6,7 +6,7 @@ Goals, prerequisites, acceptance criteria and task status. See [AGENTS.md](AGENT
 
 Implement a reproducible Ukrainian CRF self-training pipeline with isolated development and final evaluation, usable raw-text inference, and validated run artifacts. Preserve the approved experiment design and original datasets.
 
-Completed goals: M1–M3 (fixture-based acceptance). Next: M4 literature streaming and contamination controls. Production-corpus readiness and end-to-end pipeline completion remain separate goals; evidence is in [HISTORY.md](docs/HISTORY.md).
+Completed goals: M1–M3 and M4 tasks 1–2 (fixture-based acceptance). Next: M4 streaming/resource-failure verification. Production-corpus readiness and end-to-end pipeline completion remain separate goals; evidence is in [HISTORY.md](docs/HISTORY.md).
 
 Gold-corpus availability, release identity, and compatibility checks are pending. Small deterministic fixtures support implementation and offline verification without production data. Full corpus runs have a separate readiness gate below; missing inputs must not be replaced with another split or fabricated data. No sprint duration or delivery estimate is assumed.
 
@@ -64,7 +64,13 @@ Prerequisites: milestones 2–3. Architecture: [Raw-Text Segmentation Contract](
 
   Evidence: [M4 task 1 history](docs/HISTORY.md#m4-task-1--literature-reader-and-ud-adapter). Types/tests and changed-code lint/format passed; repository lint/format retain only the unchanged `scripts/fetch_dictionary.py` failures. Full tests passed outside the sandbox after its process-enumeration restriction blocked the existing RSS smoke test. Official-corpus tokenizer compatibility remains pending.
 
-- [ ] Implement text-only gold overlap exclusion, deterministic literature deduplication, and known-source/MWT exclusions. Acceptance: automatic fingerprints and exclusion diagnostics follow the contract; held-out labels remain uninterpreted; original gold is unchanged.
+- [x] Implement text-only gold overlap exclusion, deterministic literature deduplication, and known-source/MWT exclusions. Acceptance: automatic fingerprints and exclusion diagnostics follow the contract; held-out labels remain uninterpreted; original gold is unchanged.
+  - [x] Add versioned surface fingerprints and a fresh disk-backed audit of every gold split using only the label-free interface.
+  - [x] Filter literature in discovery order with full-source evidence rules, train-only MWT rules and first-eligible-occurrence deduplication.
+  - [x] Record provenance/counts/corpus identity, review boundary/failure cases, and verify focused plus all required checks.
+
+  Evidence: [M4 task 2 history](docs/HISTORY.md#m4-task-2--contamination-controls). Types/tests and changed-code lint/format passed; repository lint/format retain only the unchanged `scripts/fetch_dictionary.py` failures. Repaired the task-blocking committed tokenizer import typo. Real-corpus source provenance and near-duplicate limitations remain explicit.
+
 - [ ] Verify streaming and resource-failure behavior with bounded fixtures and controlled monitor inputs. Acceptance: oversized candidates are rejected intact, gold sentences are not filtered or truncated, intermediates are incremental, and inference-only filtering is distinct from pseudo-label selection.
 
 ### 5. Implement CRF Training, Model Bundles, and Validation Metrics
@@ -117,6 +123,6 @@ These items are separate from fixture-based implementation acceptance. Do not ma
 
 ## Next Priorities and Blockers
 
-- Complete the M4 raw-text/UD adapter: bounded paragraph streaming, aligned normalization, UD boundaries and formatting-character preservation; then implement contamination controls.
+- Complete M4 streaming/resource-failure integration and verify pseudo-label filtering remains distinct from standalone inference.
 - Establish official gold availability/release identity, literature source separation and tokenizer compatibility before real-corpus experiments.
 - Resolve or explicitly account for the unrelated Ruff failures before completing affected goals; see [recorded limitations](docs/HISTORY.md#recorded-limitations). Historical verification results are in [HISTORY.md](docs/HISTORY.md#verification-record).
