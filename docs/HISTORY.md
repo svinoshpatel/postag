@@ -165,6 +165,31 @@ Focused checks also passed: configuration/resources (113 cases with the real-RSS
 
 Remaining limits: default dictionary manifest is absent, so no real release/download was verified; HTTP behavior was tested with offline responses. MWT improvement is verified by reduced Python encoding work, not production benchmarks. Memory monitoring remains best effort. Official-corpus compatibility, M5–M9 implementation and real training/evaluation remain separate pending work. Defer scanner/parser/normalizer rewrites and feature extraction optimization until profiling justifies them; this refactoring does not weaken their validation or source-integrity checks.
 
+## M5 Task 1 — Single-Candidate CRF Training
+
+**2026-11-03 — Implementation and pre-test requirement review.** Added `crf.models.training.fit_candidate` and the training interface contract in ARCH. Work is limited to the first M5 task; serialization, metrics and search remain pending.
+
+- Input isolation → consume only the supplied ordered validated records; reject validation/test roles, gold path/mapping mismatches, unaligned/empty sentences and unrequested pseudo records. Require supervised data even in augmented mode. Feature extraction receives forms alone; native fitting receives no development arguments. Hash canonical ordered JSONL bytes and record total/pseudo counts. Producers remain responsible for full source/span validation and later publishing exactly these dataset bytes.
+- Optimization → fresh L-BFGS estimator per call, configured regularization/grid and prescribed defaults, explicit line-search defaults, no fabricated random state. Main-thread execution and a process-local lock prevent overlapping fits. Capture complete estimator options, configuration identity, seed and environment versions. Native training data stays in memory; it is never silently reduced.
+- Termination → inspect raw loss messages because the dependency parser does not recognize nonfinite loss text. Require consecutive iterations with finite objectives and recognized stop evidence. Maximum-iteration stops are budget-limited; errors/unknown stops fail even if native code writes a model. A local tiny-data probe confirmed that the pinned library writes a file after error code (2), so this case must be rejected. Zero configured iterations preserves the dependency's unlimited convention.
+- Resources/lifecycle → checkpoints while preparing features, loading native examples, receiving optimizer messages and after fitting, plus aggregate background monitoring. Own a configured monitor or accept a matching active enclosing monitor. Shared-monitor results remain provisional until successful owner exit. Failures clean only the fit's temporary native file and close its tagger; no model/report is published. Successful estimators retain no monitor/callback closure. Native interruptions remain best effort, not a hard RSS bound.
+- Planned verification → tiny real two-label fitting, exact settings/checksums/counts, fresh fits, custom mapping and explicit augmentation; deterministic optimizer logs for convergence/limits/invalid losses/errors; held-out/empty/late input failure and inactive/wrong-budget/resource failures. No production data, network or persistent training outputs are needed.
+
+**2026-11-03 — Complete for fixture-based acceptance.** Added 47 offline cases, including native integration fixtures using the locked CRFsuite dependencies. Verified exact estimator options, declared records/features/targets with no held-out arguments, order-sensitive dataset checksums, fresh models, mapped training, explicit augmentation, convergence/iteration limits, optimizer errors despite native file creation, malformed/nonfinite log evidence, main-thread/sequential guards, late iterator errors, and inactive/finished/wrong-budget monitors. Controlled RSS failures during preparation, native append, optimizer callbacks, after fit and owned-monitor exit all prevent a successful result; failed native files are removed. The successful owned-monitor path completes monitoring before returning. Shared-monitor callers still own final publication checks.
+
+Verification on CPython 3.14.6/macOS, with `UV_CACHE_DIR=/private/tmp/postag-uv-cache` prefixed to every command:
+
+| Check | Actual command | Result on 2026-11-03 |
+|---|---|---|
+| Focused | `uv run pytest tests/test_training.py -q` | Passed: 47 cases |
+| Lint | `uv run ruff check .` | Passed |
+| Formatting | `uv run ruff format --check .` | Passed: 51 Python files |
+| Types | `uv run mypy src/crf/` | Passed: 24 source files |
+| Tests (sandbox) | `uv run pytest tests/ -v` | 864 passed; existing real-RSS smoke failed because macOS `sysctl` process enumeration was denied |
+| Tests (process access permitted) | `uv run pytest tests/ -v` | Passed: all 865 tests in 4.12 seconds |
+
+`git diff --check` and local documentation references passed inspection. Generated model/dataset paths remain ignored; no production datasets, persistent model bundles or dependency changes were produced. The pre-existing `AD main.py` index/worktree state is unchanged; no Git mutations were performed. Memory limits remain best effort and native optimization/environment changes may affect results. Source/span validity is delegated to existing record factories; serialization, strict bundle loading, metrics/search and real-corpus training remain separate pending tasks.
+
 ## Verification Record
 
 M1–M3 code checks: 2026-10-29, CPython 3.14.6/macOS arm64. These historical results were not rerun for the documentation compaction on 2026-10-30; references, task state and scoped diffs were checked. Latest code verification is recorded in [M4 task 3](#m4-task-3--streaming-and-resource-failure-verification), with earlier M4 results above.

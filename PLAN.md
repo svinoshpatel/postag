@@ -91,7 +91,10 @@ Prerequisites: milestones 2–3. Architecture: [Raw-Text Segmentation Contract](
 
 Prerequisites: milestones 2–3. Architecture: [Training & Model-Selection Contract](docs/ARCH.md), [Model Bundles](docs/ARCH.md#model-bundles), and [Metric Records](docs/ARCH.md#metric-records).
 
-- [ ] Implement the CRF training wrapper with the prescribed optimizer settings, sequential fitting, termination records, and memory failures. Acceptance: every candidate uses only its declared training records; iteration-limited models are not called converged.
+- [x] Implement the CRF training wrapper with the prescribed optimizer settings, sequential fitting, termination records, and memory failures. Acceptance: every candidate uses only its declared training records; iteration-limited models are not called converged.
+  - [x] Add a single-candidate API with explicit gold-only/augmented input policy, fresh fits, ordered dataset identity and training/environment records.
+  - [x] Validate optimizer termination and resource failures with offline fixtures, then run the four required checks.
+  Evidence: [M5 task 1 history](docs/HISTORY.md#m5-task-1--single-candidate-crf-training). Fixture-based acceptance; production training remains pending.
 - [ ] Implement model serialization, metadata/checksum validation, and save/load verification. Acceptance: round-tripped predictions and confidences agree, mismatched bundles fail, and standalone loading does not require original training files.
 - [ ] Implement validation metrics and reports. Acceptance: token accuracy, fixed-inventory macro/per-tag F1, confusion counts, shared gold-only OOV vocabulary, and punctuation diagnostics agree with deterministic fixtures, including empty diagnostic subsets.
 - [ ] Implement the gold-only candidate search and gate selection. Acceptance: the nine baseline configurations, validation-only selection, tie breakers, cached candidates, and trial records match the contract; test predictions and metrics are unavailable during development.
@@ -137,6 +140,6 @@ These items are separate from fixture-based implementation acceptance. Do not ma
 
 ## Next Priorities and Blockers
 
-- Implement the M5 CRF training wrapper with configured optimization, termination records and resource failures.
+- Implement M5 model bundle serialization, strict metadata/checksum validation and save/load verification.
 - Establish official gold availability/release identity, literature source separation and tokenizer compatibility before real-corpus experiments.
 - Preserve the restored lint/format baseline in subsequent work; see [refactoring verification](docs/HISTORY.md#refactoring-and-refinement). Historical verification results remain in [HISTORY.md](docs/HISTORY.md#verification-record).
