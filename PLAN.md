@@ -6,7 +6,7 @@ Goals, prerequisites, acceptance criteria and task status. See [AGENTS.md](AGENT
 
 Implement a reproducible Ukrainian CRF self-training pipeline with isolated development and final evaluation, usable raw-text inference, and validated run artifacts. Preserve the approved experiment design and original datasets.
 
-Completed goals: M1–M4 (fixture-based acceptance). Next: M5 CRF training, model bundles and validation metrics. Production-corpus readiness and end-to-end pipeline completion remain separate goals; evidence is in [HISTORY.md](docs/HISTORY.md).
+Completed goals: M1–M5 (fixture-based acceptance). Next: M6 pseudo-label confidence and sampling. Production-corpus readiness and end-to-end pipeline completion remain separate goals; evidence is in [HISTORY.md](docs/HISTORY.md).
 
 Gold-corpus availability, release identity, and compatibility checks are pending. Small deterministic fixtures support implementation and offline verification without production data. Full corpus runs have a separate readiness gate below; missing inputs must not be replaced with another split or fabricated data. No sprint duration or delivery estimate is assumed.
 
@@ -102,7 +102,10 @@ Prerequisites: milestones 2–3. Architecture: [Training & Model-Selection Contr
 - [x] Implement validation metrics and reports. Acceptance: token accuracy, fixed-inventory macro/per-tag F1, confusion counts, shared gold-only OOV vocabulary, and punctuation diagnostics agree with deterministic fixtures, including empty diagnostic subsets.
   - [x] Implement aligned validation scoring, gold-only vocabulary and strict metric-report validation/publication; verify deterministic boundaries and all required checks.
   Evidence: [M5 task 3 history](docs/HISTORY.md#m5-task-3--validation-metrics). Offline acceptance; actual validation inference/search remains pending.
-- [ ] Implement the gold-only candidate search and gate selection. Acceptance: the nine baseline configurations, validation-only selection, tie breakers, cached candidates, and trial records match the contract; test predictions and metrics are unavailable during development.
+- [x] Implement the gold-only candidate search and gate selection. Acceptance: the nine baseline configurations, validation-only selection, tie breakers, cached candidates, and trial records match the contract; test predictions and metrics are unavailable during development.
+  - [x] Add sequential baseline execution, persisted datasets/bundles/metrics and a complete terminal trial ledger, with fail-closed gate selection.
+  - [x] Verify the default grid, tie breakers, isolation, retained candidates and failure accounting using offline fixtures and all required checks.
+  Evidence: [M5 task 4 history](docs/HISTORY.md#m5-task-4--baseline-search-and-gate-selection). Default nine-fit search verified on tiny offline records; real-corpus experiments remain pending.
 
 ### 6. Implement Pseudo-Label Confidence and Sampling
 
@@ -145,6 +148,6 @@ These items are separate from fixture-based implementation acceptance. Do not ma
 
 ## Next Priorities and Blockers
 
-- Implement M5 gold-only candidate search and validation-only gate selection.
+- Implement M6 Viterbi-label marginals and complete-sentence confidence acceptance.
 - Establish official gold availability/release identity, literature source separation and tokenizer compatibility before real-corpus experiments.
 - Preserve the restored lint/format baseline in subsequent work; see [refactoring verification](docs/HISTORY.md#refactoring-and-refinement). Historical verification results remain in [HISTORY.md](docs/HISTORY.md#verification-record).
