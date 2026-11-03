@@ -99,7 +99,9 @@ Prerequisites: milestones 2–3. Architecture: [Training & Model-Selection Contr
   - [x] Add strict complete sidecars and portable loading with environment, parameter, inventory and checksum checks.
   - [x] Publish fresh candidate bundles after monitored round-trip verification; cover malformed/incomplete bundles and no-clobber failures, then run required checks.
   Evidence: [M5 task 2 history](docs/HISTORY.md#m5-task-2--model-bundle-persistence). Fixture-based persistence acceptance; real-corpus model production remains pending.
-- [ ] Implement validation metrics and reports. Acceptance: token accuracy, fixed-inventory macro/per-tag F1, confusion counts, shared gold-only OOV vocabulary, and punctuation diagnostics agree with deterministic fixtures, including empty diagnostic subsets.
+- [x] Implement validation metrics and reports. Acceptance: token accuracy, fixed-inventory macro/per-tag F1, confusion counts, shared gold-only OOV vocabulary, and punctuation diagnostics agree with deterministic fixtures, including empty diagnostic subsets.
+  - [x] Implement aligned validation scoring, gold-only vocabulary and strict metric-report validation/publication; verify deterministic boundaries and all required checks.
+  Evidence: [M5 task 3 history](docs/HISTORY.md#m5-task-3--validation-metrics). Offline acceptance; actual validation inference/search remains pending.
 - [ ] Implement the gold-only candidate search and gate selection. Acceptance: the nine baseline configurations, validation-only selection, tie breakers, cached candidates, and trial records match the contract; test predictions and metrics are unavailable during development.
 
 ### 6. Implement Pseudo-Label Confidence and Sampling
@@ -143,6 +145,6 @@ These items are separate from fixture-based implementation acceptance. Do not ma
 
 ## Next Priorities and Blockers
 
-- Implement M5 validation metrics/reports with fixed target inventory, shared gold-only OOV vocabulary and punctuation diagnostics.
+- Implement M5 gold-only candidate search and validation-only gate selection.
 - Establish official gold availability/release identity, literature source separation and tokenizer compatibility before real-corpus experiments.
 - Preserve the restored lint/format baseline in subsequent work; see [refactoring verification](docs/HISTORY.md#refactoring-and-refinement). Historical verification results remain in [HISTORY.md](docs/HISTORY.md#verification-record).

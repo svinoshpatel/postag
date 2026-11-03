@@ -83,8 +83,8 @@ If a failure prevents verification of the changed behavior, keep the task incomp
 ## 6. Git Protocol
 
 1. The agent may run read-only Git inspection commands, including `git status`, `git diff`, `git log`, and `git show`.
-2. Git operations that change the index, working tree, history, repository configuration, or remotes require explicit user authorization. This includes staging, committing, switching branches, stashing, resetting, cleaning, merging, rebasing, fetching, and pushing. Authorization applies only to the requested operation and scope.
-3. After completing a task with file changes, provide a suggested commit message and commands naming the actual changed paths. Do not recommend staging unrelated changes. Omit commit recommendations for tasks with no changes.
+2. The agent may stage and commit task-relevant changes without additional confirmation. Preserve unrelated staged and working-tree changes and exclude them from task commits.
+3. Other Git operations that change the working tree, history, repository configuration, or remotes require explicit user authorization. This includes switching branches, stashing, resetting, cleaning, merging, rebasing, fetching, and pushing. Authorization applies only to the requested operation and scope.
 
 ## 7. Error Recovery
 
@@ -102,7 +102,7 @@ If a failure prevents verification of the changed behavior, keep the task incomp
 2. Artifact locations are defined exclusively in `docs/ARCH.md`. Before writing outputs, ensure their resolved paths cannot overwrite original inputs.
 3. Before producing artifacts, inspect `.gitignore` and add missing exclusions for generated datasets, model binaries, weights, and serialization formats used by the project. Small, intentional test fixtures may remain versioned.
 4. Existing generated artifacts must not be overwritten without explicit authorization. Otherwise, use a distinct output location.
-5. Dataset and model artifacts must not be staged or committed, except for the intentional test fixtures allowed above. Before recommending a commit, inspect the proposed paths for prohibited artifacts.
+5. Dataset and model artifacts must not be staged or committed, except for the intentional test fixtures allowed above. Before staging or committing, inspect the proposed paths for prohibited artifacts.
 
 ## 9. Environment and Reproducibility
 

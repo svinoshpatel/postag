@@ -448,6 +448,8 @@ Confidence acceptance, contamination exclusion, deduplication, known-multiword-t
 
 ### Metric Records
 
+`crf.evaluation` provides validation-only scoring of validated gold records and immutable sentence predictions carrying sentence IDs, token IDs and normalized forms. Build one immutable lexical vocabulary from `train_gold` and reuse it across candidates; bind it to the effective configuration. Reject held-out test roles, duplicate/missing/extra/reordered predictions, misaligned forms/IDs and incompatible labels. This layer performs no inference and opens no corpora. Final test orchestration remains a later interface. Report validation recomputes primary metrics from confusion counts with floating-point tolerance; diagnostic membership is established during aligned scoring, not recoverable from aggregate report counts. Publication requires successful finished monitoring and uses the existing no-clobber artifact writer. Frozen-reference checks against actual bundles and trial-history links belong to orchestration.
+
 Metric JSON has exactly `schema_version` (integer `1`), `run_id`, `split` (`val_gold` or `test_gold`), `target_inventory` (alphabetically ordered label array), and `models` (mapping described below). Each model entry has exactly these fields:
 
 | Field                           | Type and meaning                                                                                                                                                                           |
