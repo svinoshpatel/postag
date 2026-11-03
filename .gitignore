@@ -10,6 +10,8 @@ __pycache__/
 /dist/
 
 /data/tokenized/
+/data/dict_uk/*
+!/data/dict_uk/source.json
 /literature
 
 # Derived artifacts; immutable data/raw inputs remain visible to Git.

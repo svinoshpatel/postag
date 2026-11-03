@@ -12,6 +12,15 @@ Gold-corpus availability, release identity, and compatibility checks are pending
 
 ## Ordered Implementation Milestones
 
+### Refactoring and Refinement — Existing M1–M4 Implementation
+
+Scope: preserve public preprocessing/configuration contracts and existing user changes; improve demonstrated safety, bounded work and readability before M5. Evidence: [refactoring review](docs/HISTORY.md#refactoring-and-refinement).
+
+- [x] Make memory-monitor scheduling fail closed and split configuration section parsing into focused typed helpers. Acceptance: invalid intervals and scheduling failures cannot authorize success; effective configuration values and hashes stay compatible.
+- [x] Replace repeated MWT candidate scans with indexed exact probes and clarify contamination decisions. Acceptance: exclusion priority, matched surfaces, counts and corpus identities remain stable; matching remains interruptible with bounded Python encoding/probe work.
+- [x] Harden the legacy dictionary downloader and reduce its CLI to reusable typed logic. Acceptance: metadata cannot redirect writes, existing files are never replaced, failed downloads clean temporary files, and offline tests exercise failures without network access.
+- [x] Review each implementation against the specification before new tests, then run focused regressions and all four required checks. Acceptance: actual results and compatibility limits are recorded in history.
+
 Milestones follow the prerequisites below. Execution procedures are in AGENTS.md; requirement reviews and verification records belong in HISTORY.md.
 
 ### 1. Establish the Environment and Core Package
@@ -130,4 +139,4 @@ These items are separate from fixture-based implementation acceptance. Do not ma
 
 - Implement the M5 CRF training wrapper with configured optimization, termination records and resource failures.
 - Establish official gold availability/release identity, literature source separation and tokenizer compatibility before real-corpus experiments.
-- Resolve or explicitly account for the unrelated Ruff failures before completing affected goals; see [recorded limitations](docs/HISTORY.md#recorded-limitations). Historical verification results are in [HISTORY.md](docs/HISTORY.md#verification-record).
+- Preserve the restored lint/format baseline in subsequent work; see [refactoring verification](docs/HISTORY.md#refactoring-and-refinement). Historical verification results remain in [HISTORY.md](docs/HISTORY.md#verification-record).

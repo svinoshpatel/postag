@@ -201,32 +201,10 @@ def _section(
     return fields | supplied
 
 
-def parse_config(
-    value: object, *, repository_root: Path, seed: int | None = None
-) -> PipelineConfig:
-    """Validate settings without opening corpora (also suitable for model metadata)."""
-    raw = _mapping(
-        value,
-        "config",
-        {
-            "config_version",
-            "seed",
-            "tag_mapping",
-            "data",
-            "preprocessing",
-            "features",
-            "training",
-            "self_training",
-            "resources",
-            "evaluation",
-        },
-    )
-    if _integer(raw.get("config_version"), "config_version") != 1:
-        raise ConfigError("Unsupported config_version")
-    configured_seed = _integer(raw.get("seed", 42), "seed")
-    effective_seed = configured_seed if seed is None else _integer(seed, "CLI seed")
+def _parse_data(value: object, repository_root: Path) -> DataConfig:
+    """Validate corpus locations and text decoding without opening sources."""
     data = _mapping(
-        raw.get("data"),
+        value,
         "data",
         {
             "train_gold",
@@ -270,19 +248,15 @@ def parse_config(
         raise ConfigError(
             f"data.source_encoding: unsupported text codec {encoding}"
         ) from exc
-    try:
-        mapping = TagMapping.from_dict(raw.get("tag_mapping", {}))
-    except TagMappingError as exc:
-        raise ConfigError(str(exc)) from exc
-    versions = _section(raw, "preprocessing", asdict(PreprocessingConfig()))
-    features = _section(raw, "features", asdict(FeatureConfig()))
-    for key, version in versions.items():
-        if _integer(version, key) != 1:
-            raise ConfigError(f"Unsupported {key}: {version}")
-    try:
-        feature_version = validate_feature_version(features["schema_version"])
-    except FeatureSchemaError as exc:
-        raise ConfigError(str(exc)) from exc
+    return DataConfig(
+        **paths,
+        ud_release=_string(data.get("ud_release"), "data.ud_release"),
+        source_encoding=encoding,
+    )
+
+
+def _parse_training(raw: dict[str, object]) -> TrainingConfig:
+    """Validate regularization grids and optimizer settings with shared defaults."""
     training = _section(raw, "training", asdict(TrainingConfig()))
     params = _mapping(
         training["parameters"], "training.parameters", set(asdict(CRFParameters()))
@@ -297,6 +271,52 @@ def parse_config(
     for key in ("all_possible_states", "all_possible_transitions"):
         if type(parameters[key]) is not bool:
             raise ConfigError(f"{key}: expected boolean")
+    return TrainingConfig(
+        _grid(training["c1_grid"], "training.c1_grid"),
+        _grid(training["c2_grid"], "training.c2_grid"),
+        CRFParameters(**parameters),
+    )
+
+
+def parse_config(
+    value: object, *, repository_root: Path, seed: int | None = None
+) -> PipelineConfig:
+    """Validate settings without opening corpora (also suitable for model metadata)."""
+    raw = _mapping(
+        value,
+        "config",
+        {
+            "config_version",
+            "seed",
+            "tag_mapping",
+            "data",
+            "preprocessing",
+            "features",
+            "training",
+            "self_training",
+            "resources",
+            "evaluation",
+        },
+    )
+    if _integer(raw.get("config_version"), "config_version") != 1:
+        raise ConfigError("Unsupported config_version")
+    configured_seed = _integer(raw.get("seed", 42), "seed")
+    effective_seed = configured_seed if seed is None else _integer(seed, "CLI seed")
+    data = _parse_data(raw.get("data"), repository_root)
+    try:
+        mapping = TagMapping.from_dict(raw.get("tag_mapping", {}))
+    except TagMappingError as exc:
+        raise ConfigError(str(exc)) from exc
+    versions = _section(raw, "preprocessing", asdict(PreprocessingConfig()))
+    features = _section(raw, "features", asdict(FeatureConfig()))
+    for key, version in versions.items():
+        if _integer(version, key) != 1:
+            raise ConfigError(f"Unsupported {key}: {version}")
+    try:
+        feature_version = validate_feature_version(features["schema_version"])
+    except FeatureSchemaError as exc:
+        raise ConfigError(str(exc)) from exc
+    training = _parse_training(raw)
     self_training = _section(raw, "self_training", asdict(SelfTrainingConfig()))
     resources = {
         key: _integer(item, f"resources.{key}", 1)
@@ -306,11 +326,7 @@ def parse_config(
         raise ConfigError("resources.batch_tokens must be >= max_sentence_tokens")
     evaluation = _section(raw, "evaluation", asdict(EvaluationConfig()))
     return PipelineConfig(
-        data=DataConfig(
-            **paths,
-            ud_release=_string(data.get("ud_release"), "data.ud_release"),
-            source_encoding=encoding,
-        ),
+        data=data,
         seed=effective_seed,
         tag_mapping=mapping.entries,
         preprocessing=PreprocessingConfig(
@@ -322,17 +338,7 @@ def parse_config(
             ),
         ),
         features=FeatureConfig(schema_version=feature_version),
-        training=TrainingConfig(
-            _grid(
-                training["c1_grid"],
-                "training.c1_grid",
-            ),
-            _grid(
-                training["c2_grid"],
-                "training.c2_grid",
-            ),
-            CRFParameters(**parameters),
-        ),
+        training=training,
         self_training=SelfTrainingConfig(
             _grid(
                 self_training["thresholds"],

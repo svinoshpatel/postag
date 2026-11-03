@@ -126,6 +126,45 @@ The new tests verify exact-budget success, latched budget/sampler failures, boun
 
 The dictionary script's lint/format failures are unchanged from the previous task; no checks were weakened or unrelated files repaired. `.gitignore` already covers test intermediates in the prescribed artifact tree. No production corpus, training or final evaluation ran. M4 is complete at fixture level; selected-corpus tokenizer/source compatibility, M5–M8 model/CLI stages and M9 full pipeline integration remain pending. Memory monitoring remains best-effort during indivisible library/native operations; future stage owners must supply the monitor, exhaust all iterators and require successful monitor exit before guarded publication.
 
+## Refactoring and Refinement
+
+**2026-10-30 — Team analysis and implementation plan.** Three reviewers inspected preprocessing/contamination, configuration/artifact/resource foundations, and CLI/features against ARCH and PLAN. Priorities are a silently failing monitor wait, repeated same-prefix MWT candidate work, a long configuration parser, and an unvalidated legacy dictionary download destination. Preserve the staged/deleted `main.py` and pre-existing untracked `tests/test_preprocessing_streaming.py`.
+
+Selected increments: fail-closed monitor scheduling plus section-parser extraction; indexed MWT probes plus explicit exclusion branches; typed reusable dictionary retrieval with a thin CLI and validated metadata/no-clobber publication. Avoid rewriting the bounded character scanner, gold parser or normalization engine without profiling evidence. Retain independent feature validation and repeated source-integrity scans; these enforce contracts. M5–M9 and production experiments remain outside this refactoring scope.
+
+Baseline checks using `UV_CACHE_DIR=/private/tmp/postag-uv-cache`: `uv run ruff check .` failed only on dictionary-script I001; `uv run ruff format --check .` failed only on that script (46 other files passed); `uv run pytest tests/ -q` produced 760 passes and one failure because sandboxed macOS process enumeration denied `sysctl` in the existing real-RSS smoke test. This is an environment restriction, not evidence of a monitor implementation regression.
+
+Implementation requirement reviews and final verification follow below as increments complete.
+
+Pre-test requirement review — foundations and contamination:
+
+- Monitor: validate positive finite platform-supported sampling intervals, including huge integers without overflow. Guard both waiting and sampling; latch scheduling errors with their cause, retain earlier failures and interrupt the owner. Exit/publication must reject latched failures. Test the platform boundary, oversized/huge values and a controlled scheduling exception without real memory exhaustion.
+- Configuration: extract typed data/path/codec and training parsers while retaining defaults, schema, serialization and path guards. Some multiply-invalid configurations may report a different first invalid field; error category and valid configuration behavior remain compatible. Existing focused configuration/resource checks passed (109 cases, real-RSS smoke excluded there).
+- Contamination: extract train-only MWT indexing; retain first observed surface, exact normalization and insert-or-ignore behavior. Probe distinct eligible lengths in descending order and exact encoded keys, retaining earliest token position and the previous matching-prefix choice (JSON comma sorts before closing bracket). Check monitoring between probes. Explicit gold-overlap, MWT and duplicate branches preserve priority and exclusion fields. Existing 58 contamination tests passed before new tests. New cases will cover competing lengths/positions, same normalized surfaces, same-head distractor work bounds and fatal monitor checkpoints.
+
+The baseline real-RSS smoke test was rerun outside the sandbox with `UV_CACHE_DIR=/private/tmp/postag-uv-cache uv run pytest tests/test_resources.py::test_real_process_monitor_smoke -q`: passed (1 test), confirming the baseline failure was sandbox process-enumeration access.
+
+**2026-11-03 — Resumed implementation and pre-test dictionary review.** Existing foundations and contamination changes were retained and reviewed; the user-owned streaming test still has SHA-256 `833a300477e4695a2eb3f7dd0d7f9520cf1225d4409b8d66c45a211c255b3ab4`. Added monitor boundary/scheduling regressions (113 focused passes excluding real RSS) and contamination matching regressions (86 contamination/streaming integration passes). Independent review found no precedence or match-selection regression. The operation-count fixture verifies one Python encoding for 80 same-head/same-length distractors; SQLite may still scan index entries, so this is not an end-to-end speedup claim.
+
+Dictionary requirement mapping before new tests: frozen metadata validates required strings, basename, SHA-256 and credential-free HTTPS; strict JSON rejects malformed/duplicate/nonfinite inputs while allowing extra metadata fields. Manifest/output locations remain confined to `data/dict_uk`; directory-anchored no-follow descriptors reject symlink redirection, and regular-file checks reject special files. Stream download bytes to a fresh temporary file, verify the checksum, hard-link without replacement and clean temporary entries on failure. Redirects must retain HTTPS. The argparse CLI delegates to the core and reports missing manifests on stderr with failure status. Planned offline tests cover malformed paths/URLs/metadata, redirects, existing matches/mismatches/symlinks/FIFOs, streaming/checksum/read/publication failures, winner preservation and CLI behavior. No live download is authorized by these tests. `.gitignore` now excludes dictionary downloads and temporary entries while allowing the default source manifest; `git check-ignore` confirmed both cases.
+
+Independent dictionary review identified that `http.client.IncompleteRead` is an `HTTPException` outside the CLI's `OSError`/`ValueError` handler. Temporary cleanup already covers it; the targeted repair extends CLI handling to HTTP protocol errors. Regression expectations remain controlled stderr/exit failure and no partial publication after a truncated response.
+
+**2026-11-03 — Completed and verified.** The HTTP error was reproduced offline, repaired, and covered by CLI/stream-cleanup regressions. The dictionary suite passes 48 offline cases. Foundations added four cases and contamination added five, for 57 additional cases overall. Valid pipeline configuration/data schemas remain unchanged. Dictionary CLI stdout now contains only the result path; status diagnostics go to stderr. Unsafe manifests/URLs and unsupported monitor intervals now fail explicitly. Multiple-invalid-field configuration errors may be reported in a different order.
+
+Final verification on CPython 3.14.6/macOS with `UV_CACHE_DIR=/private/tmp/postag-uv-cache` prefixed to each command:
+
+| Check | Actual command | Result on 2026-11-03 |
+|---|---|---|
+| Lint | `uv run ruff check .` | Passed; prior dictionary I001 exception resolved |
+| Formatting | `uv run ruff format --check .` | Passed; all 49 Python files formatted |
+| Types | `uv run mypy src/crf/` | Passed; 23 source files |
+| Tests | `uv run pytest tests/ -v` | Passed; 818 tests in 5.17 seconds, outside sandbox for real-RSS process enumeration |
+
+Focused checks also passed: configuration/resources (113 cases with the real-RSS smoke test deselected); contamination/preprocessing streaming (86); `uv run pytest tests/test_dictionary.py -q` (48). Scoped lint/format checks passed during each increment. Local documentation links and `git diff --check` passed; final index inspection and the streaming-test checksum confirm user changes were preserved. No dependencies, raw datasets or existing generated artifacts changed; no Git mutations were performed.
+
+Remaining limits: default dictionary manifest is absent, so no real release/download was verified; HTTP behavior was tested with offline responses. MWT improvement is verified by reduced Python encoding work, not production benchmarks. Memory monitoring remains best effort. Official-corpus compatibility, M5–M9 implementation and real training/evaluation remain separate pending work. Defer scanner/parser/normalizer rewrites and feature extraction optimization until profiling justifies them; this refactoring does not weaken their validation or source-integrity checks.
+
 ## Verification Record
 
 M1–M3 code checks: 2026-10-29, CPython 3.14.6/macOS arm64. These historical results were not rerun for the documentation compaction on 2026-10-30; references, task state and scoped diffs were checked. Latest code verification is recorded in [M4 task 3](#m4-task-3--streaming-and-resource-failure-verification), with earlier M4 results above.
@@ -140,7 +179,7 @@ M1–M3 code checks: 2026-10-29, CPython 3.14.6/macOS arm64. These historical re
 ## Recorded Limitations
 
 - Runtime imports, `uv lock --check`/`uv pip check`, isolated editable imports, wheel/sdist contents and artifact ignore rules were verified during M1–M2. Tiny offline CRF fitting/marginal/joblib checks passed; cross-platform bitwise reproducibility is not claimed.
-- Lint/format exception: unchanged `scripts/fetch_dictionary.py` fails I001 and formatting, reproduced before/after implementation. Changed-code checks pass; no checks were weakened. Existing `AD main.py` state remains untouched.
+- Historical lint/format exception: `scripts/fetch_dictionary.py` failed I001 and formatting during M1–M4. Resolved by the [2026-11-03 refactoring](#refactoring-and-refinement); earlier results remain preserved above. Existing `AD main.py` state remains untouched.
 - Official gold availability/release identity, source separation and selected-corpus tokenizer compatibility remain unverified. M4 covers bounded streaming, aligned UD adaptation/formatting-character preservation, contamination controls and resource-failure integration with offline fixtures. No production training or final evaluation has run.
 
 ## Documentation Maintenance

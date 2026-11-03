@@ -25,10 +25,46 @@ def test_invalid_budget(budget: int) -> None:
         MemoryMonitor(budget)
 
 
-@pytest.mark.parametrize("interval", [True, 0, -1, float("nan"), float("inf")])
+@pytest.mark.parametrize(
+    "interval",
+    [True, 0, -1, float("nan"), float("inf"), threading.TIMEOUT_MAX * 2, 10**400],
+)
 def test_invalid_interval(interval: float) -> None:
     with pytest.raises(ValueError):
         MemoryMonitor(1, interval_seconds=interval)
+
+
+def test_platform_maximum_interval_can_stop_without_waiting() -> None:
+    monitor = MemoryMonitor(
+        1, interval_seconds=threading.TIMEOUT_MAX, sampler=lambda: 0
+    )
+    with monitor:
+        monitor.checkpoint()
+    monitor.ensure_success()
+    assert monitor.finished
+
+
+def test_background_wait_failure_is_latched(monkeypatch: pytest.MonkeyPatch) -> None:
+    interrupted = threading.Event()
+    monitor = MemoryMonitor(1, sampler=lambda: 0, interrupt=interrupted.set)
+    scheduling_error = OSError("controlled scheduling failure")
+
+    def failed_wait(timeout: float | None = None) -> bool:
+        raise scheduling_error
+
+    monkeypatch.setattr(monitor._stop, "wait", failed_wait)
+    with pytest.raises(ResourceMonitoringError, match="scheduling failure") as failure:
+        with monitor:
+            assert interrupted.wait(timeout=2)
+            with pytest.raises(ResourceMonitoringError) as checkpoint_failure:
+                monitor.checkpoint()
+            assert checkpoint_failure.value.__cause__ is scheduling_error
+    assert failure.value is checkpoint_failure.value
+    assert failure.value.__cause__ is scheduling_error
+    assert monitor.finished
+    with pytest.raises(ResourceMonitoringError) as completion_failure:
+        monitor.ensure_success()
+    assert completion_failure.value is failure.value
 
 
 def test_threshold_peak_and_single_use() -> None:

@@ -57,10 +57,12 @@ class MemoryMonitor:
             raise ValueError("memory_budget_mib must be a positive integer")
         if (
             type(interval_seconds) not in (int, float)
+            or not 0 < interval_seconds <= threading.TIMEOUT_MAX
             or not math.isfinite(interval_seconds)
-            or interval_seconds <= 0
         ):
-            raise ValueError("interval_seconds must be finite and positive")
+            raise ValueError(
+                "interval_seconds must be finite, positive and <= threading.TIMEOUT_MAX"
+            )
         self.budget_mib = memory_budget_mib
         self.interval_seconds = interval_seconds
         self._sampler = sampler
@@ -130,12 +132,19 @@ class MemoryMonitor:
                 )
 
     def _watch(self) -> None:
-        while not self._stop.wait(self.interval_seconds):
-            try:
+        try:
+            while not self._stop.wait(self.interval_seconds):
                 self._sample()
-            except ResourceMonitoringError:
-                self._interrupt()
-                return
+        except Exception as exc:
+            with self._lock:
+                if self._failure is None:
+                    failure = ResourceMonitoringError(
+                        f"RSS monitoring thread failed: {exc}"
+                    )
+                    failure.__cause__ = exc
+                    self._failure = failure
+                    logger.error("%s", failure)
+            self._interrupt()
 
     def __enter__(self) -> MemoryMonitor:
         if threading.current_thread() is not threading.main_thread():
@@ -173,6 +182,8 @@ class MemoryMonitor:
             if exc_type is not None and not issubclass(exc_type, KeyboardInterrupt):
                 return False
             if self._failure is not None:
+                if exc is None:
+                    raise self._failure
                 raise self._failure from exc
         except KeyboardInterrupt as interrupt:
             self._aborted = True

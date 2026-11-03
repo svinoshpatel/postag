@@ -14,7 +14,7 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import BinaryIO, Literal
 
-from crf.data.conllu import iter_gold_audit
+from crf.data.conllu import GoldAuditSentence, iter_gold_audit
 from crf.data.identity import GOLD_ROLES, InputIdentity, iter_input_identities
 from crf.data.literature import RawExclusion, RawSentence, iter_literature_events
 from crf.data.normalization import normalize_form
@@ -231,33 +231,32 @@ class ContaminationAudit:
                 )
                 self._gold_count += 1
                 if source.source_role == "train_gold":
-                    for row in audit.surface_rows:
-                        self._checkpoint()
-                        if (
-                            not isinstance(row.token_id, tuple)
-                            or row.token_id[1] != "-"
-                        ):
-                            continue
-                        forms = tuple(
-                            form
-                            for sentence in iter_adapted_sentences(
-                                row.form,
-                                source_offset=1,
-                                adapter_version=self._metadata.tokenizer_adapter_version,
-                                normalizer_version=self._metadata.normalizer_version,
-                            )
-                            for form in sentence.normalized_forms
-                        )
-                        if not forms:
-                            raise ValidationError(
-                                f"{source.source_path}: empty MWT surface"
-                            )
-                        db.execute(
-                            "INSERT OR IGNORE INTO mwt VALUES (?, ?, ?, ?)",
-                            (json_bytes(list(forms)), forms[0], len(forms), row.form),
-                        )
+                    self._index_mwt(audit)
             db.commit()
             self._checkpoint()
+
+    def _index_mwt(self, audit: GoldAuditSentence) -> None:
+        """Index normalized train-only surfaces, retaining the first source spelling."""
+        for row in audit.surface_rows:
+            self._checkpoint()
+            if not isinstance(row.token_id, tuple) or row.token_id[1] != "-":
+                continue
+            forms = tuple(
+                form
+                for sentence in iter_adapted_sentences(
+                    row.form,
+                    source_offset=1,
+                    adapter_version=self._metadata.tokenizer_adapter_version,
+                    normalizer_version=self._metadata.normalizer_version,
+                )
+                for form in sentence.normalized_forms
+            )
+            if not forms:
+                raise ValidationError(f"{audit.source.source_path}: empty MWT surface")
+            self._connection.execute(
+                "INSERT OR IGNORE INTO mwt VALUES (?, ?, ?, ?)",
+                (json_bytes(list(forms)), forms[0], len(forms), row.form),
+            )
 
     def _checkpoint(self) -> None:
         check_memory(
@@ -268,13 +267,20 @@ class ContaminationAudit:
         forms = sentence.feature_forms
         for index, first in enumerate(forms):
             self._checkpoint()
-            candidates = self._connection.execute(
-                "SELECT tokens, count, surface FROM mwt WHERE first=? AND count<=? ORDER BY tokens",
+            lengths = self._connection.execute(
+                "SELECT DISTINCT count FROM mwt WHERE first=? AND count<=? ORDER BY count DESC",
                 (first, len(forms) - index),
             )
-            for encoded, count, surface in candidates:
-                if encoded == json_bytes(list(forms[index : index + count])):
-                    return str(surface)
+            # Matching patterns are prefixes of the same suffix. Longer JSON arrays
+            # sort first (',' precedes ']'), preserving the former token-key order.
+            for (count,) in lengths:
+                self._checkpoint()
+                encoded = json_bytes(list(forms[index : index + count]))
+                match = self._connection.execute(
+                    "SELECT surface FROM mwt WHERE tokens=?", (encoded,)
+                ).fetchone()
+                if match is not None:
+                    return str(match[0])
         return None
 
     def _decision(
@@ -293,36 +299,34 @@ class ContaminationAudit:
                 (fingerprint,),
             )
         )
-        mwt = None if splits else self._match_mwt(sentence)
-        previous = (
-            None
-            if splits or mwt
-            else db.execute(
-                "SELECT sentence_id FROM seen WHERE fingerprint=?", (fingerprint,)
-            ).fetchone()
-        )
-        if splits or mwt or previous:
-            reason: Literal["gold_overlap", "known_mwt", "literature_duplicate"]
-            reason = (
-                "gold_overlap"
-                if splits
-                else "known_mwt"
-                if mwt
-                else "literature_duplicate"
-            )
+        reason: Literal["gold_overlap", "known_mwt", "literature_duplicate"] | None
+        mwt = duplicate_of = None
+        if splits:
+            reason = "gold_overlap"
+        else:
+            mwt = self._match_mwt(sentence)
+            if mwt is not None:
+                reason = "known_mwt"
+            else:
+                previous = db.execute(
+                    "SELECT sentence_id FROM seen WHERE fingerprint=?", (fingerprint,)
+                ).fetchone()
+                reason = "literature_duplicate" if previous is not None else None
+                duplicate_of = None if previous is None else previous[0]
+        if reason is not None:
             return ContaminationExclusion(
-                sentence.source,
-                reason,
-                sentence.sentence_id,
-                sentence.sentence_ordinal,
-                sentence.paragraph_ordinal,
-                sentence.text.source_span,
-                len(sentence.text.surface_text),
-                len(sentence.feature_forms),
-                fingerprint,
-                splits,
-                mwt,
-                None if previous is None else previous[0],
+                source=sentence.source,
+                reason=reason,
+                sentence_id=sentence.sentence_id,
+                sentence_ordinal=sentence.sentence_ordinal,
+                paragraph_ordinal=sentence.paragraph_ordinal,
+                source_span=sentence.text.source_span,
+                characters=len(sentence.text.surface_text),
+                tokens=len(sentence.feature_forms),
+                sentence_fingerprint=fingerprint,
+                matched_splits=splits,
+                matched_mwt=mwt,
+                duplicate_of=duplicate_of,
             )
         db.execute(
             "INSERT INTO seen VALUES (?, ?)", (fingerprint, sentence.sentence_id)

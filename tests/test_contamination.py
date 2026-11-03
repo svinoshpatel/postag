@@ -16,8 +16,9 @@ from crf.data.contamination import (
     sentence_fingerprint,
 )
 from crf.data.identity import GOLD_ROLES, InputIdentity, iter_input_identities
-from crf.data.literature import RawExclusion, iter_literature
+from crf.data.literature import RawExclusion, RawSentence, iter_literature
 from crf.utils.config import PipelineConfig
+from crf.utils.resources import MemoryBudgetExceeded, MemoryMonitor
 from crf.utils.serialization import ValidationError, json_bytes, loads_json
 
 
@@ -254,6 +255,110 @@ def test_multi_token_mwt_surface_is_matched(
     assert isinstance(result[0], ContaminationExclusion)
     assert result[0].matched_mwt == "наче б"
     assert isinstance(result[1], EligibleSentence)
+
+
+@pytest.mark.parametrize(
+    "surfaces,text,expected",
+    [
+        (("наче", "наче б"), "Це наче б.", "наче б"),
+        (("наче б", "наче"), "Це наче б.", "наче б"),
+        (("наче", "аби то так"), "наче аби то так.", "наче"),
+    ],
+)
+def test_mwt_match_preserves_longest_prefix_at_earliest_position(
+    corpus: Path,
+    artifact_config: PipelineConfig,
+    surfaces: tuple[str, ...],
+    text: str,
+    expected: str,
+) -> None:
+    (corpus / "data/raw/gold/train.conllu").write_text(
+        "".join(mwt(surface, "Навчальний.") for surface in surfaces),
+        encoding="utf-8",
+    )
+    (corpus / "data/raw/literature/a.txt").write_text(text, encoding="utf-8")
+    result, report = run(corpus, artifact_config)
+    assert len(result) == 1
+    assert isinstance(result[0], ContaminationExclusion)
+    assert result[0].reason == "known_mwt"
+    assert result[0].matched_mwt == expected
+    assert report.accepted_sentence_count == 0
+    assert dict(report.exclusion_counts)["known_mwt"] == 1
+
+
+def test_mwt_matching_serializes_once_per_distinct_length(
+    corpus: Path, artifact_config: PipelineConfig, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Many train patterns share the same head/length but none matches the raw text.
+    surfaces = [
+        f"наче варіант{chr(0x430 + number // 32)}{chr(0x430 + number % 32)}"
+        for number in range(80)
+    ]
+    (corpus / "data/raw/gold/train.conllu").write_text(
+        "".join(mwt(surface, "Навчальний.") for surface in surfaces),
+        encoding="utf-8",
+    )
+    (corpus / "data/raw/literature/a.txt").write_text("наче інший.", encoding="utf-8")
+    sentence = next(iter_literature(artifact_config, corpus))
+    with contamination_audit(artifact_config, corpus, index_path=index()) as audit:
+        encoded: list[object] = []
+
+        def observe_encoding(value: object) -> bytes:
+            encoded.append(value)
+            return json_bytes(value)
+
+        monkeypatch.setattr("crf.data.contamination.json_bytes", observe_encoding)
+        assert audit._match_mwt(sentence) is None
+        assert encoded == [["наче", "інший"]]
+
+
+def test_memory_failure_during_mwt_probe_prevents_report(
+    corpus: Path, artifact_config: PipelineConfig, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    (corpus / "data/raw/gold/train.conllu").write_text(
+        mwt("наче б", "Навчальний."), encoding="utf-8"
+    )
+    (corpus / "data/raw/literature/a.txt").write_text("наче б.", encoding="utf-8")
+    armed = False
+    samples = 0
+
+    def sample() -> int:
+        nonlocal samples
+        if armed:
+            samples += 1
+        return (
+            artifact_config.resources.memory_budget_mib * 1024 * 1024 + 1
+            if samples >= 2
+            else 0
+        )
+
+    monitor = MemoryMonitor(
+        artifact_config.resources.memory_budget_mib,
+        interval_seconds=60,
+        sampler=sample,
+    )
+    with pytest.raises(MemoryBudgetExceeded), monitor:
+        with contamination_audit(
+            artifact_config, corpus, index_path=index(), monitor=monitor
+        ) as audit:
+            match = audit._match_mwt
+
+            def arm_matching(sentence: RawSentence) -> str | None:
+                nonlocal armed
+                armed = True
+                return match(sentence)
+
+            monkeypatch.setattr(audit, "_match_mwt", arm_matching)
+            statements: list[str] = []
+            audit._connection.set_trace_callback(statements.append)
+            with pytest.raises(MemoryBudgetExceeded):
+                list(audit.iter_events())
+            assert samples == 2
+            assert not any("SELECT surface FROM mwt" in sql for sql in statements)
+            with pytest.raises(ValidationError, match="incomplete"):
+                audit.report()
+    with pytest.raises(MemoryBudgetExceeded):
+        monitor.ensure_success()
 
 
 def test_known_source_skipped_in_full_before_decoding_or_dedup(
@@ -576,6 +681,7 @@ def test_normalized_train_mwt_patterns_are_deduplicated(
     result, report = run(corpus, artifact_config)
     assert isinstance(result[0], ContaminationExclusion)
     assert result[0].reason == "known_mwt"
+    assert result[0].matched_mwt == "п’ять-то"
     assert report.mwt_pattern_count == 1
 
 
