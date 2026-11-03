@@ -201,7 +201,9 @@ def _section(
     return fields | supplied
 
 
-def _parse_data(value: object, repository_root: Path) -> DataConfig:
+def _parse_data(
+    value: object, repository_root: Path, *, resolve_paths: bool
+) -> DataConfig:
     """Validate corpus locations and text decoding without opening sources."""
     data = _mapping(
         value,
@@ -222,11 +224,22 @@ def _parse_data(value: object, repository_root: Path) -> DataConfig:
             f"data.{key}",
         )
         # Check lexical literature symlinks before canonicalizing the path.
-        if key == "literature_dir":
+        if key == "literature_dir" and resolve_paths:
             reject_symlink_ancestors(
                 repository_root.resolve() / name, repository_root.resolve()
             )
-        paths[key] = repository_path(name, repository_root, f"data.{key}")
+        if resolve_paths:
+            paths[key] = repository_path(name, repository_root, f"data.{key}")
+        else:
+            # Bundle settings describe unavailable original inputs. Validate their
+            # canonical relative spelling without touching that filesystem.
+            if (
+                Path(name).is_absolute()
+                or "\\" in name
+                or any(part in {"", ".", ".."} for part in name.split("/"))
+            ):
+                raise ConfigError(f"data.{key}: expected canonical relative path")
+            paths[key] = Path(name)
         if key != "literature_dir" and (
             not paths[key].is_relative_to("data/raw/gold")
             or paths[key].suffix != ".conllu"
@@ -279,9 +292,15 @@ def _parse_training(raw: dict[str, object]) -> TrainingConfig:
 
 
 def parse_config(
-    value: object, *, repository_root: Path, seed: int | None = None
+    value: object,
+    *,
+    repository_root: Path,
+    seed: int | None = None,
+    resolve_paths: bool = True,
 ) -> PipelineConfig:
-    """Validate settings without opening corpora (also suitable for model metadata)."""
+    """Validate settings; metadata can opt out of original-path filesystem access."""
+    if type(resolve_paths) is not bool:
+        raise ConfigError("resolve_paths: expected boolean")
     raw = _mapping(
         value,
         "config",
@@ -302,7 +321,7 @@ def parse_config(
         raise ConfigError("Unsupported config_version")
     configured_seed = _integer(raw.get("seed", 42), "seed")
     effective_seed = configured_seed if seed is None else _integer(seed, "CLI seed")
-    data = _parse_data(raw.get("data"), repository_root)
+    data = _parse_data(raw.get("data"), repository_root, resolve_paths=resolve_paths)
     try:
         mapping = TagMapping.from_dict(raw.get("tag_mapping", {}))
     except TagMappingError as exc:

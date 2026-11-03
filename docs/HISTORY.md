@@ -190,6 +190,31 @@ Verification on CPython 3.14.6/macOS, with `UV_CACHE_DIR=/private/tmp/postag-uv-
 
 `git diff --check` and local documentation references passed inspection. Generated model/dataset paths remain ignored; no production datasets, persistent model bundles or dependency changes were produced. The pre-existing `AD main.py` index/worktree state is unchanged; no Git mutations were performed. Memory limits remain best effort and native optimization/environment changes may affect results. Source/span validity is delegated to existing record factories; serialization, strict bundle loading, metrics/search and real-corpus training remain separate pending tasks.
 
+## M5 Task 2 — Model Bundle Persistence
+
+**2026-11-03 — Implementation and pre-test requirement review.** Added strict bundle metadata and trusted-local joblib persistence, with an embedded immutable training record in freshly fitted estimators. Promoted parameter/environment helpers for use by training and persistence. Added lexical-only configuration parsing for recorded original paths; ordinary configuration resolution remains the default.
+
+- Sidecars → exact top-level fields, complete canonical configuration, frozen-grid/full estimator settings, sorted fixed inventory, seed, positive/aligned supervised/pseudo counts, checksums and valid termination/iteration limits. Require exact installed Python/Unicode/runtime dependency versions. Embedded training evidence and model options/log/learned labels must agree with sidecar; learned labels may be a subset of the fixed inventory.
+- Save lifecycle → require successful finished training monitoring; reserve a fresh prescribed candidate directory without following symlinks. Serialize under a separate configured monitor, compare deterministic synthetic predictions and every full-precision marginal after loading, dispose the restored estimator, and exit monitoring successfully before publishing the model. Publish metadata last. Partial errors may leave an incomplete directory/model, but cannot authorize loading; existing outputs are preserved.
+- Loading → read regular no-follow files through anchored directory descriptors; parse metadata/environment and optional frozen references before deserialization. Copy model bytes incrementally to an anonymous temporary snapshot, verify checksum, then deserialize that same snapshot. Validate estimator/evidence/log and close rejected temporary native state. Standalone copies require no original repository or dataset; repository-bound loads additionally verify the prescribed containing path. Joblib remains trusted-local pickle, not authenticated/safe untrusted deserialization.
+- Boundaries/failures → planned offline tests cover unmapped/mapped/iteration-limited round trips, Viterbi confidences, portable loading with absent/inaccessible sources, incomplete/corrupt/swapped bundles, schema/type/environment/parameter/evidence mismatches, symlinks/special files, no-overwrite and controlled serialization/resource failures. New serialization memory is monitored best effort; callers of a shared loading monitor must still require its successful exit. No production artifacts or data are needed.
+
+**2026-11-03 — Complete for fixture-based acceptance.** Added 98 offline persistence/configuration cases. Native round trips preserve predictions, every unrounded marginal and Viterbi-label confidences for default/mapped label spaces and iteration-limited/unlimited settings. A copied bundle loads and predicts after the source fixture's entire data/model tree is removed. Guarded metadata parsing verifies no source-path resolution/stat/open calls; installed dependency metadata remains intentionally readable for compatibility checks. Verified checksum-before-deserialization, exact frozen references, embedded evidence, strict complete JSON/configuration, unknown/duplicate fields, invalid Unicode/types/numbers/versions/paths, missing/corrupt models, wrong serialized object types and special-file/symlink rejection.
+
+Failure fixtures verify dump errors, changed round-trip results, serialization RSS failure, serialization/load monitor exit failure, failed sidecar publication, and cleanup of rejected native files. Fresh-directory allocation preserves existing complete and incomplete bundles and rejects redirected model directories. The verified model snapshot remains stable if its source changes after checksum verification. Shared loading monitors remain caller-owned/provisional; callers must close loaded bundles when done. Existing training/configuration regressions passed (229 focused cases before the final four boundary tests were added).
+
+Verification on CPython 3.14.6/macOS, with `UV_CACHE_DIR=/private/tmp/postag-uv-cache` prefixed to each command:
+
+| Check | Actual command | Result on 2026-11-03 |
+|---|---|---|
+| Focused | `uv run pytest tests/test_bundles.py -q` | Passed: 98 cases |
+| Lint | `uv run ruff check .` | Passed |
+| Formatting | `uv run ruff format --check .` | Passed: 53 Python files |
+| Types | `uv run mypy src/crf/` | Passed: 25 source files |
+| Tests | `uv run pytest tests/ -v` | Passed: all 963 tests in 7.94 seconds, with process-enumeration access for the existing RSS smoke test |
+
+`git diff --check` passed; new documentation references and the bundle artifact exclusions were inspected. Dependencies, original datasets and existing generated outputs are unchanged. All bundles were created in temporary test repositories. No Git mutations were performed; the original `AD main.py` state and concurrent PyCharm XML/guide/history changes were preserved. Bundle loading intentionally requires the new embedded training evidence; exploratory joblib files are not production bundles. Exact environment matching is conservative, joblib requires trusted local artifacts, and memory monitoring is best effort. Validation metrics, candidate search and real-corpus runs remain pending.
+
 ## Verification Record
 
 M1–M3 code checks: 2026-10-29, CPython 3.14.6/macOS arm64. These historical results were not rerun for the documentation compaction on 2026-10-30; references, task state and scoped diffs were checked. Latest code verification is recorded in [M4 task 3](#m4-task-3--streaming-and-resource-failure-verification), with earlier M4 results above.
@@ -211,3 +236,9 @@ M1–M3 code checks: 2026-10-29, CPython 3.14.6/macOS arm64. These historical re
 
 - **2026-10-30 — Report compaction:** shortened milestone narratives/tables in ARCH/PLAN; verified all 34 checklist entries, pending milestone/corpus sections, architecture tables/code fences and local links. No code checks were rerun.
 - **2026-10-30 — Documentation separation:** moved build/verification records here; kept architecture design in ARCH, goals/status in PLAN and placement rules in AGENTS. Verified migrated evidence, goal statuses, design tables/code examples, local references and scoped diffs. No code, dependency, dataset or generated-artifact changes; no code checks rerun. The pre-existing `AD main.py` state was preserved.
+
+## PyCharm Project Root Correction
+
+**2026-11-03.** Made the module content root explicitly `$PROJECT_DIR$` (the `postag` checkout), retained only repository `src`/`tests` roots and indexing exclusions, removed sibling VCS mappings and inherited the existing project SDK instead of the module override `uv (git)`. The previous module-relative content URL already resolved to `postag` on disk; this correction removes ambiguity and stale settings rather than relocating files. Updated the setup guide.
+
+Requirement review and verification: parsed changed IDE XML, resolved the module/content/source paths to this checkout, and checked exclusions and the single project Git mapping. No application code or runtime configuration changed; the four Python checks were not rerun for IDE-only settings. Live PyCharm inspection timed out; reopen `~/git/postag` to reload settings, with live UI confirmation still pending. Existing unrelated working changes were preserved.

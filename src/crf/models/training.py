@@ -121,9 +121,10 @@ class _MonitoredTrainer(pycrfsuite.Trainer):  # type: ignore[misc]
         super().message(message)
 
 
-def _parameters(
+def candidate_parameters(
     config: PipelineConfig, c1: float, c2: float
 ) -> dict[str, ParameterValue]:
+    """Return the full serializable estimator options for one frozen-grid trial."""
     for name, value, grid in (
         ("c1", c1, config.training.c1_grid),
         ("c2", c2, config.training.c2_grid),
@@ -213,7 +214,8 @@ def _validate_record(
         raise TrainingError("Training forms disagree with normalization")
 
 
-def _dependency_versions() -> tuple[tuple[str, str], ...]:
+def dependency_versions() -> tuple[tuple[str, str], ...]:
+    """Record exact runtime distributions shared by fitting and bundle validation."""
     # Include direct runtime dependencies plus the native optimizer and its adapter.
     names = {"ukrainian-crf-postag", "python-crfsuite", "scipy", "scikit-learn"}
     for requirement in requires("ukrainian-crf-postag") or ():
@@ -279,10 +281,11 @@ def _fit(
             config.seed,
             platform.python_version(),
             unicodedata.unidata_version,
-            _dependency_versions(),
+            dependency_versions(),
             termination.reason,
             termination.iterations,
         )
+        model.postag_training_record_ = evidence
         return FittedCandidate(model, evidence)
     except BaseException:
         if model._tagger is not None:
@@ -314,7 +317,7 @@ def fit_candidate(
         )
     if type(allow_pseudo) is not bool:
         raise TrainingError("allow_pseudo must be boolean")
-    parameters = _parameters(config, c1, c2)
+    parameters = candidate_parameters(config, c1, c2)
     if not _FIT_LOCK.acquire(blocking=False):
         raise TrainingError("Another candidate fit is already active")
     result: FittedCandidate | None = None

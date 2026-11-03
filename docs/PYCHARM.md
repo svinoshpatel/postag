@@ -1,5 +1,10 @@
 # PyCharm and the uv environment
 
+Open the repository folder `~/git/postag` as the PyCharm project. Its only
+content root is `$PROJECT_DIR$`; the parent `~/git` and sibling repositories
+are outside this project. After external root changes, close and reopen this
+folder so PyCharm reloads `.idea`.
+
 Run `uv sync --locked` from the repository root. The project uses the existing
 `.venv/bin/python` interpreter selected by `.python-version` (CPython 3.14.6).
 Dependencies and development tools come from `pyproject.toml` and `uv.lock`.
