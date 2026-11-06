@@ -6,7 +6,7 @@ import logging
 from collections.abc import Sequence
 from pathlib import Path
 
-from crf.final_evaluation import evaluate_core
+from crf.final_evaluation import evaluate
 from crf.pipeline import DevelopmentIncomplete, develop
 from crf.utils.config import load_config
 from crf.utils.logging import configure_logging
@@ -33,12 +33,12 @@ def main(argv: Sequence[str] | None = None) -> int:
     try:
         root = Path.cwd()
         if args.command == "evaluate":
-            core = evaluate_core(root, args.run_id, seed=args.seed)
+            result = evaluate(root, args.run_id, seed=args.seed)
             print(
                 json.dumps(
                     dict(
-                        status="predictions_complete_pending_bootstrap",
-                        run_id=core.experiment.run_id,
+                        status="complete",
+                        run_id=result.core.experiment.run_id,
                     )
                 )
             )

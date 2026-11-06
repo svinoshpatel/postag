@@ -6,7 +6,7 @@ from collections.abc import Callable, Iterator
 from dataclasses import dataclass
 from itertools import zip_longest
 from pathlib import Path
-from typing import Any, BinaryIO
+from typing import TYPE_CHECKING, Any, BinaryIO, cast
 
 from crf.data.conllu import GoldSentence, iter_gold_records, iter_gold_sentences
 from crf.data.identity import iter_input_identities
@@ -33,6 +33,9 @@ from crf.utils.serialization import (
     loads_json,
     object_fields,
 )
+
+if TYPE_CHECKING:
+    from crf.bootstrap import Outcome
 
 ROLES = ("gate", "final", "gold_control")
 CORE_OUTPUTS = tuple(f"{role}.jsonl" for role in ROLES) + ("metrics.json",)
@@ -319,3 +322,342 @@ def evaluate_core(
     )
     _publish(directory / "core.json", json_bytes(core), root)
     return _load_core(experiment, root)
+
+
+@dataclass(frozen=True)
+class FinalEvaluation:
+    core: EvaluationCore
+    comparison: dict[str, object]
+    completion_path: Path
+
+
+def _bootstrap_inputs(
+    core: EvaluationCore, monitor: MemoryMonitor
+) -> tuple[Outcome, ...]:
+    from crf.bootstrap import Outcome
+
+    records = tuple(
+        s.to_record(core.experiment.config, final_evaluation=True) for s in core.gold
+    )
+    gate = cached_predictions(
+        core.directory / "gate.jsonl",
+        records,
+        core.experiment,
+        core.experiment.selection.gate,
+        monitor,
+    )
+    final = cached_predictions(
+        core.directory / "final.jsonl",
+        records,
+        core.experiment,
+        core.experiment.selection.final,
+        monitor,
+    )
+    return tuple(
+        Outcome(
+            record.sentence_id,
+            len(record.token_ids),
+            sum(
+                a == b
+                for a, b in zip(record.target_labels, g.predicted_labels, strict=True)
+            ),
+            sum(
+                a == b
+                for a, b in zip(record.target_labels, f.predicted_labels, strict=True)
+            ),
+        )
+        for record, g, f in zip(records, gate, final, strict=True)
+    )
+
+
+def _differences(core: EvaluationCore) -> tuple[float, float]:
+    models = cast(dict[str, dict[str, float]], core.metrics["models"])
+    return (
+        100 * (models["final"]["accuracy"] - models["gate"]["accuracy"]),
+        100 * (models["final"]["accuracy"] - models["gold_control"]["accuracy"]),
+    )
+
+
+def _validate_final(
+    value: object,
+    core: EvaluationCore,
+    root: Path,
+    monitor: MemoryMonitor | None = None,
+) -> FinalEvaluation:
+    import math
+
+    from crf.bootstrap import resampling_units
+    from crf.utils.serialization import integer, text_value
+
+    raw = object_fields(
+        value,
+        {
+            "schema_version",
+            "run_id",
+            "status",
+            "started_at",
+            "finished_at",
+            "development_sha256",
+            "selected_sha256",
+            "outputs",
+            "environment",
+            "peak_rss_mib",
+            "error",
+        },
+        "evaluation completion",
+    )
+    if (
+        integer(raw["schema_version"], "schema_version") != 1
+        or raw["run_id"] != core.experiment.run_id
+        or raw["status"] not in ("complete", "failed")
+    ):
+        raise ValidationError("Invalid evaluation completion")
+    validate_observation(
+        raw["environment"], raw["started_at"], raw["finished_at"], raw["peak_rss_mib"]
+    )
+    if raw["development_sha256"] != file_sha256(
+        core.experiment.run_path, monitor
+    ) or raw["selected_sha256"] != file_sha256(
+        root / "models" / core.experiment.run_id / "selected.json", monitor
+    ):
+        raise ValidationError("Evaluation development/selection links changed")
+    if raw["status"] == "failed":
+        error = object_fields(raw["error"], {"stage", "message"}, "error")
+        text_value(error["stage"], "error stage")
+        text_value(error["message"], "error message")
+        raise ValidationError("Failed evaluation cannot authorize cached success")
+    if raw["error"] is not None:
+        raise ValidationError("Successful evaluation requires null error")
+    outputs = object_fields(
+        raw["outputs"],
+        set(CORE_OUTPUTS) | {"comparison.json", "units.jsonl"},
+        "evaluation outputs",
+    )
+    for name, checksum in outputs.items():
+        if checksum != file_sha256(core.directory / name, monitor):
+            raise ValidationError("Evaluation output checksum mismatch")
+    unit_type, units, fallback = resampling_units(core.gold)
+    if read_bytes(core.directory / "units.jsonl") != b"".join(
+        jsonl_bytes(unit.to_dict()) for unit in units
+    ):
+        raise ValidationError(
+            "Persisted units disagree with gold document/sentence grouping"
+        )
+    comparison = object_fields(
+        loads_json(read_bytes(core.directory / "comparison.json")),
+        {
+            "schema_version",
+            "run_id",
+            "split",
+            "final_minus_gate_pp",
+            "final_minus_gold_control_pp",
+            "bootstrap",
+        },
+        "comparison",
+    )
+    if (
+        integer(comparison["schema_version"], "schema_version") != 1
+        or comparison["run_id"] != core.experiment.run_id
+        or comparison["split"] != "test_gold"
+    ):
+        raise ValidationError("Invalid comparison identity")
+    for key, expected in zip(
+        ("final_minus_gate_pp", "final_minus_gold_control_pp"),
+        _differences(core),
+        strict=True,
+    ):
+        actual = comparison[key]
+        if type(actual) not in (int, float) or actual != expected:
+            raise ValidationError("Signed comparison disagrees with metrics")
+    report = object_fields(
+        comparison["bootstrap"],
+        {
+            "unit_type",
+            "unit_count",
+            "resamples",
+            "seed",
+            "method",
+            "percentile_interpolation",
+            "lower_pp",
+            "upper_pp",
+            "unavailable_reason",
+        },
+        "bootstrap",
+    )
+    config = core.experiment.config.evaluation
+    if (
+        report["unit_type"] != unit_type
+        or integer(report["unit_count"], "unit count") != len(units)
+        or integer(report["resamples"], "resamples", 1) != config.bootstrap_resamples
+        or integer(report["seed"], "seed") != config.bootstrap_seed
+        or report["method"] != "percentile"
+        or report["percentile_interpolation"] != "linear"
+    ):
+        raise ValidationError("Bootstrap frozen settings mismatch")
+    if len(units) < 2:
+        if report["lower_pp"] is not None or report["upper_pp"] is not None:
+            raise ValidationError("Insufficient units require unavailable interval")
+        text_value(report["unavailable_reason"], "unavailable reason")
+    else:
+        bounds = (report["lower_pp"], report["upper_pp"])
+        if (
+            any(
+                type(v) not in (int, float)
+                or not math.isfinite(cast(float, v))
+                or not -100 <= cast(float, v) <= 100
+                for v in bounds
+            )
+            or cast(float, bounds[0]) > cast(float, bounds[1])
+            or report["unavailable_reason"] is not None
+        ):
+            raise ValidationError("Invalid bootstrap interval")
+    diagnostic = loads_json(read_bytes(core.directory / "diagnostics.json"))
+    if diagnostic != dict(
+        schema_version=1,
+        run_id=core.experiment.run_id,
+        unit_type=unit_type,
+        unit_count=len(units),
+        fallback_reason=fallback,
+    ):
+        raise ValidationError("Bootstrap fallback diagnostics disagree")
+    return FinalEvaluation(core, comparison, core.directory / "completion.json")
+
+
+def evaluate(root: Path, run_id: str, *, seed: int | None = None) -> FinalEvaluation:
+    from crf.bootstrap import paired_bootstrap, resampling_units
+    from crf.reporting import validate_failure
+    from crf.utils.artifacts import load_completed, publish_completion
+    from crf.utils.serialization import json_bytes
+
+    root = root.resolve()
+    context = _context(root)
+    experiment = load_development(root, run_id)
+    monitor = MemoryMonitor(experiment.config.resources.memory_budget_mib)
+    core: EvaluationCore | None = None
+    cached: FinalEvaluation | None = None
+    attempted = False
+
+    def descriptor(error: BaseException | None = None) -> dict[str, object]:
+        assert core is not None
+        return dict(
+            schema_version=1,
+            run_id=run_id,
+            status="complete" if error is None else "failed",
+            started_at=context.started_at,
+            finished_at=_utc_now(),
+            development_sha256=file_sha256(experiment.run_path),
+            selected_sha256=file_sha256(root / "models" / run_id / "selected.json"),
+            outputs={}
+            if error is not None
+            else {
+                name: file_sha256(core.directory / name)
+                for name in (*CORE_OUTPUTS, "comparison.json", "units.jsonl")
+            },
+            environment=dict(
+                python_version=context.python_version,
+                unicode_version=context.unicode_version,
+                dependency_versions=dict(context.dependency_versions),
+                source_revision=context.source_revision,
+                source_dirty=context.source_dirty,
+            ),
+            peak_rss_mib=monitor.peak_rss_mib,
+            error=None
+            if error is None
+            else dict(stage="evaluation", message=str(error) or type(error).__name__),
+        )
+
+    try:
+        with monitor:
+            core = evaluate_core(root, run_id, seed=seed)
+            path = core.directory / "completion.json"
+            if path.exists() or path.is_symlink():
+                cached = load_completed(
+                    path,
+                    root,
+                    validate=lambda value: _validate_final(value, core, root, monitor),
+                )
+            else:
+                marker = core.directory / "bootstrap_attempt.json"
+                if marker.exists() or marker.is_symlink():
+                    raise ValidationError(
+                        "Interrupted bootstrap attempt cannot be resumed automatically"
+                    )
+                _publish(
+                    marker,
+                    json_bytes(
+                        dict(
+                            schema_version=1,
+                            run_id=run_id,
+                            started_at=context.started_at,
+                        )
+                    ),
+                    root,
+                )
+                attempted = True
+                unit_type, units, fallback = resampling_units(core.gold)
+                outcomes = _bootstrap_inputs(core, monitor)
+                config = experiment.config.evaluation
+                report = paired_bootstrap(
+                    units,
+                    outcomes,
+                    unit_type=unit_type,
+                    resamples=config.bootstrap_resamples,
+                    seed=config.bootstrap_seed,
+                    monitor=monitor,
+                )
+                differences = _differences(core)
+                comparison = dict(
+                    schema_version=1,
+                    run_id=run_id,
+                    split="test_gold",
+                    final_minus_gate_pp=differences[0],
+                    final_minus_gold_control_pp=differences[1],
+                    bootstrap=report,
+                )
+                _publish(
+                    core.directory / "units.jsonl",
+                    b"".join(jsonl_bytes(unit.to_dict()) for unit in units),
+                    root,
+                )
+                _publish(
+                    core.directory / "comparison.json", json_bytes(comparison), root
+                )
+                _publish(
+                    core.directory / "diagnostics.json",
+                    json_bytes(
+                        dict(
+                            schema_version=1,
+                            run_id=run_id,
+                            unit_type=unit_type,
+                            unit_count=len(units),
+                            fallback_reason=fallback,
+                        )
+                    ),
+                    root,
+                )
+                if load_development(root, run_id) != experiment:
+                    raise ValidationError("Frozen development changed during bootstrap")
+        monitor.ensure_success()
+    except BaseException as exc:
+        if core is not None and attempted:
+            publish_completion(
+                core.directory / "completion.json",
+                descriptor(exc),
+                root,
+                validate=validate_failure,
+                monitor=monitor,
+            )
+        raise
+    if cached is not None:
+        return cached
+    assert core is not None
+    path = core.directory / "completion.json"
+    completed = descriptor()
+    publish_completion(
+        path,
+        completed,
+        root,
+        validate=lambda value: _validate_final(value, core, root),
+        monitor=monitor,
+    )
+    return _validate_final(completed, core, root)

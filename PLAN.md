@@ -139,7 +139,8 @@ Prerequisites: milestones 5–7 for final evaluation; milestones 2–5 for stand
 
 - [x] Implement the `evaluate` CLI, three-model alignment, comparisons, and test reports. Acceptance: no refitting or overrides occur; changed/incomplete experiments fail; valid completed results are returned from cache; development history remains unchanged.
   Evidence: [M8 task 1 history](docs/HISTORY.md#m8-task-1--frozen-test-inference-and-metrics). Core inference cache is verified; task 2 adds signed comparison/bootstrap and final completion authorization.
-- [ ] Implement paired bootstrap and persisted resampling units. Acceptance: grouping/fallback, random generator, repeated-unit weighting, pooled accuracy, percentile interpolation, unavailable intervals, and integrity links follow the contract.
+- [x] Implement paired bootstrap and persisted resampling units. Acceptance: grouping/fallback, random generator, repeated-unit weighting, pooled accuracy, percentile interpolation, unavailable intervals, and integrity links follow the contract.
+  Evidence: [M8 task 2 history](docs/HISTORY.md#m8-task-2--paired-bootstrap-and-evaluation-completion). Complete evaluation/cache authorization replaces the task-1 staged CLI status.
 - [ ] Implement the `predict` CLI and fresh standalone reports. Acceptance: recorded model preprocessing is used, low-confidence and repeated sentences remain eligible, resource exclusions are reported, and custom mapped labels are not presented as standard UD UPOS.
 
 ### 9. Verify Integration and Complete Implementation

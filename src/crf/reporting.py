@@ -57,3 +57,18 @@ def validate_observation(
         valid_peak = False
     if not valid_peak:
         raise ValidationError("Invalid peak RSS")
+
+
+def validate_failure(value: object) -> None:
+    """Validate shared failed-outcome observation/error fields; never authorize it."""
+    if not isinstance(value, dict) or value.get("status") != "failed":
+        raise ValidationError("Expected failed outcome")
+    validate_observation(
+        value.get("environment"),
+        value.get("started_at"),
+        value.get("finished_at"),
+        value.get("peak_rss_mib"),
+    )
+    error = object_fields(value.get("error"), {"stage", "message"}, "error")
+    text_value(error["stage"], "error stage")
+    text_value(error["message"], "error message")

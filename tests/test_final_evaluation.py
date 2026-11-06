@@ -108,3 +108,92 @@ def test_inference_failure_never_caches_success(
     assert not (directory / "core.json").exists()
     with pytest.raises((ValueError, OSError)):
         final_evaluation.evaluate_core(root, experiment.run_id)
+
+
+def test_complete_bootstrap_and_cached_no_draw(
+    frozen_evaluation: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from crf import bootstrap
+
+    root, experiment = frozen_evaluation
+    result = final_evaluation.evaluate(root, experiment.run_id)
+    report = result.comparison["bootstrap"]
+    assert report["unit_type"] == "document" and report["unit_count"] == 2
+    assert report["lower_pp"] == report["upper_pp"] == 0.0
+    assert result.comparison["final_minus_gate_pp"] == 0.0
+    original = result.completion_path.read_bytes()
+
+    def forbidden(*args: Any, **kwargs: Any) -> Any:
+        raise AssertionError("cache must not infer or draw bootstrap replicates")
+
+    monkeypatch.setattr(bootstrap, "paired_bootstrap", forbidden)
+    monkeypatch.setattr(final_evaluation, "load_bundle", forbidden)
+    assert (
+        final_evaluation.evaluate(root, experiment.run_id).comparison
+        == result.comparison
+    )
+    assert result.completion_path.read_bytes() == original
+
+
+@pytest.mark.parametrize("fault", ["units", "comparison", "completion", "missing"])
+def test_final_integrity(frozen_evaluation: Any, fault: str) -> None:
+    import hashlib
+
+    root, experiment = frozen_evaluation
+    result = final_evaluation.evaluate(root, experiment.run_id)
+    directory = result.core.directory
+    if fault == "completion":
+        result.completion_path.write_bytes(b"{}")
+    elif fault == "missing":
+        result.completion_path.unlink()
+    else:
+        name = "units.jsonl" if fault == "units" else "comparison.json"
+        path = directory / name
+        if fault == "units":
+            path.write_bytes(b"{}\n")
+        else:
+            value = json.loads(path.read_bytes())
+            value["final_minus_gate_pp"] = -1.0
+            path.write_text(json.dumps(value), encoding="utf-8")
+        descriptor = json.loads(result.completion_path.read_bytes())
+        descriptor["outputs"][name] = hashlib.sha256(path.read_bytes()).hexdigest()
+        result.completion_path.write_text(json.dumps(descriptor), encoding="utf-8")
+    with pytest.raises((ValueError, OSError)):
+        final_evaluation.evaluate(root, experiment.run_id)
+
+
+def test_bootstrap_failure_is_terminal(
+    frozen_evaluation: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from crf import bootstrap
+
+    root, experiment = frozen_evaluation
+
+    def fail(*args: Any, **kwargs: Any) -> Any:
+        raise RuntimeError("controlled bootstrap error")
+
+    monkeypatch.setattr(bootstrap, "paired_bootstrap", fail)
+    with pytest.raises(RuntimeError, match="controlled"):
+        final_evaluation.evaluate(root, experiment.run_id)
+    directory = root / "reports" / experiment.run_id / "evaluation"
+    assert (
+        json.loads((directory / "completion.json").read_bytes())["status"] == "failed"
+    )
+    with pytest.raises(ValueError):
+        final_evaluation.evaluate(root, experiment.run_id)
+
+
+def test_signed_differences_are_not_clamped() -> None:
+    from types import SimpleNamespace
+
+    assert final_evaluation._differences(
+        SimpleNamespace(
+            metrics=dict(
+                models=dict(
+                    final=dict(accuracy=0.7),
+                    gate=dict(accuracy=0.9),
+                    gold_control=dict(accuracy=0.8),
+                )
+            )
+        )
+    ) == pytest.approx((-20, -10))
