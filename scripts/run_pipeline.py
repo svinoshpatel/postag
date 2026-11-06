@@ -40,9 +40,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     print(
         json.dumps(
             dict(
-                status="search_complete_pending_freeze",
+                status="complete",
                 run_id=result.run_id,
-                trials_path=str(result.trials_path),
+                run_path=str(result.run_path),
             ),
             ensure_ascii=False,
         )

@@ -11,4 +11,6 @@ Supply your UTF-8 YAML configuration using the [configuration contract](ARCH.md#
 
 The command writes one JSON result to stdout and diagnostics to stderr. A failed search exits nonzero. Its run ID locates the terminal trial ledger under `reports/<run_id>/trials.jsonl`, when publication was possible; partial artifacts alone do not indicate success.
 
-During the current [M7 task-1 migration](ARCH.md#development-search-interface-and-staged-cli-migration), a successful search returns `search_complete_pending_freeze`. It has not frozen an experiment and cannot authorize final evaluation. The next [plan task](../PLAN.md#7-orchestrate-development-and-freeze-selection) adds that authorization. See [history](HISTORY.md#m7-task-1--develop-cli-and-final-model-search) for actual verification and limitations.
+A successful command returns `complete`, with the run ID and path to `run.json`. The [frozen selection](ARCH.md#frozen-model-selection) records the gate, final model and matched gold-only control. A valid completion record and unchanged linked artifacts are required before evaluation; a selection file alone does not authorize it.
+
+The library's `search_development` primitive runs only the search and cannot authorize evaluation. `develop` performs the complete search/freeze workflow; `crf.experiments.load_development` validates an existing completed run without changing its history. See [history](HISTORY.md#m7-task-2--frozen-selection-and-development-authorization) for actual verification and limitations.

@@ -2,10 +2,14 @@
 
 import hashlib
 import logging
+import platform
+import subprocess
+import unicodedata
 from collections.abc import Iterable, Iterator, Sequence
 from dataclasses import dataclass, replace
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import BinaryIO, cast
+from typing import TYPE_CHECKING, BinaryIO, cast
 
 from crf.data.conllu import iter_gold_records
 from crf.data.contamination import (
@@ -29,16 +33,25 @@ from crf.models.confidence import iter_scored_candidates
 from crf.models.reuse import reuse_empty_selections
 from crf.models.sampling import FrozenDataset, freeze_datasets
 from crf.models.search import BaselineSearch, BaselineTrial, search_baseline
-from crf.models.training import candidate_parameters, fit_candidate
-from crf.utils.artifacts import allocate_run, publish_bytes
+from crf.models.training import candidate_parameters, dependency_versions, fit_candidate
+from crf.utils.artifacts import (
+    RunPaths,
+    allocate_run,
+    publish_bytes,
+    publish_completion,
+)
 from crf.utils.config import PipelineConfig, parse_config, validate_input_paths
 from crf.utils.resources import MemoryMonitor
 from crf.utils.serialization import (
     ValidationError,
     canonical_config_bytes,
+    json_bytes,
     jsonl_bytes,
     loads_json,
 )
+
+if TYPE_CHECKING:
+    from crf.experiments import FrozenExperiment
 
 logger = logging.getLogger(__name__)
 
@@ -212,11 +225,12 @@ def _fit_final(
             _dispose(model)
 
 
-def develop(
+def search_development(
     config: PipelineConfig,
     repository_root: Path,
     *,
     known_source_exclusions: Sequence[KnownSourceExclusion] = (),
+    _paths: RunPaths | None = None,
 ) -> DevelopmentSearch:
     """Run one fresh search; no selected models/completion descriptor is published."""
     root = repository_root.resolve()
@@ -225,7 +239,7 @@ def develop(
         != config
     ):
         raise ValidationError("Noncanonical development configuration")
-    paths = allocate_run(root)
+    paths = allocate_run(root) if _paths is None else _paths
     run_id = paths.run_id
     grid = tuple(
         sorted(
@@ -442,3 +456,171 @@ def develop(
         ) from failure
     assert baseline is not None
     return DevelopmentSearch(run_id, baseline, datasets, tuple(finals), ledger)
+
+
+@dataclass(frozen=True)
+class RunContext:
+    started_at: str
+    source_revision: str | None
+    source_dirty: bool | None
+    python_version: str
+    unicode_version: str
+    dependency_versions: tuple[tuple[str, str], ...]
+
+
+def _utc_now() -> str:
+    return datetime.now(UTC).isoformat().replace("+00:00", "Z")
+
+
+def _context(root: Path) -> RunContext:
+    started = _utc_now()
+    revision: str | None = None
+    dirty: bool | None = None
+    try:
+        revision = subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            cwd=root,
+            check=True,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            timeout=5,
+        ).stdout.strip()
+        dirty = bool(
+            subprocess.run(
+                ["git", "status", "--porcelain"],
+                cwd=root,
+                check=True,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                timeout=5,
+            ).stdout
+        )
+    except OSError, subprocess.SubprocessError:
+        revision = None
+        dirty = None
+    return RunContext(
+        started,
+        revision,
+        dirty,
+        platform.python_version(),
+        unicodedata.unidata_version,
+        dependency_versions(),
+    )
+
+
+def develop(
+    config: PipelineConfig,
+    repository_root: Path,
+    *,
+    known_source_exclusions: Sequence[KnownSourceExclusion] = (),
+) -> FrozenExperiment:
+    """Run, validate and freeze one experiment; only finished success authorizes it."""
+    from crf.experiments import (
+        FrozenExperiment,
+        file_sha256,
+        validate_run,
+        validate_search,
+    )
+
+    root = repository_root.resolve()
+    if (
+        parse_config(config.to_dict(), repository_root=root, resolve_paths=False)
+        != config
+    ):
+        raise ValidationError("Noncanonical development configuration")
+    context = _context(root)
+    paths = allocate_run(root)
+    monitor = MemoryMonitor(config.resources.memory_budget_mib)
+    stage = "search"
+
+    def descriptor(error: tuple[str, str] | None) -> dict[str, object]:
+        def optional_hash(path: Path) -> str | None:
+            try:
+                return file_sha256(path)
+            except OSError, ValueError:
+                return None
+
+        return dict(
+            schema_version=1,
+            run_id=paths.run_id,
+            status="complete" if error is None else "failed",
+            started_at=context.started_at,
+            finished_at=_utc_now(),
+            effective_config_sha256=hashlib.sha256(
+                canonical_config_bytes(config)
+            ).hexdigest(),
+            inputs_sha256=optional_hash(paths.reports / "inputs.jsonl"),
+            trials_sha256=optional_hash(paths.reports / "trials.jsonl"),
+            selected_sha256=optional_hash(
+                root / "models" / paths.run_id / "selected.json"
+            )
+            if error is None
+            else None,
+            source_revision=context.source_revision,
+            source_dirty=context.source_dirty,
+            python_version=context.python_version,
+            unicode_version=context.unicode_version,
+            dependency_versions=dict(context.dependency_versions),
+            peak_rss_mib=monitor.peak_rss_mib,
+            error=None if error is None else dict(stage=error[0], message=error[1]),
+        )
+
+    try:
+        with monitor:
+            search_development(
+                config,
+                root,
+                known_source_exclusions=known_source_exclusions,
+                _paths=paths,
+            )
+            stage = "freeze"
+            selection = validate_search(root, paths.run_id, config, monitor)
+        monitor.ensure_success()
+        _publish(
+            root / "models" / paths.run_id / "selected.json",
+            json_bytes(selection.to_dict()),
+            root,
+        )
+    except BaseException as exc:
+        failure_stage = exc.stage if isinstance(exc, DevelopmentIncomplete) else stage
+        message = str(exc) or type(exc).__name__
+        try:
+            publish_completion(
+                paths.reports / "run.json",
+                descriptor((failure_stage, message)),
+                root,
+                validate=lambda raw: validate_run(raw, root, paths.run_id, config),
+                monitor=monitor,
+            )
+        except OSError, ValueError, RuntimeError:
+            logger.exception(
+                "Could not publish failed development descriptor for %s", paths.run_id
+            )
+        if isinstance(exc, DevelopmentIncomplete):
+            raise
+        raise DevelopmentIncomplete(paths.run_id, failure_stage, message) from exc
+    try:
+        publish_completion(
+            paths.reports / "run.json",
+            descriptor(None),
+            root,
+            validate=lambda raw: validate_run(raw, root, paths.run_id, config),
+            monitor=monitor,
+        )
+    except (OSError, ValueError, RuntimeError) as exc:
+        try:
+            publish_completion(
+                paths.reports / "run.json",
+                descriptor(("completion", str(exc) or type(exc).__name__)),
+                root,
+                validate=lambda raw: validate_run(raw, root, paths.run_id, config),
+                monitor=monitor,
+            )
+        except OSError, ValueError, RuntimeError:
+            logger.exception("Could not publish failed completion for %s", paths.run_id)
+        raise DevelopmentIncomplete(
+            paths.run_id, "completion", str(exc) or type(exc).__name__
+        ) from exc
+    return FrozenExperiment(paths.run_id, config, selection, paths.reports / "run.json")
