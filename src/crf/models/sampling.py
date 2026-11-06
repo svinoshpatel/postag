@@ -4,6 +4,7 @@ import hashlib
 import os
 import re
 import sqlite3
+from collections import Counter
 from collections.abc import Callable, Iterable
 from contextlib import closing
 from dataclasses import dataclass
@@ -11,16 +12,23 @@ from fractions import Fraction
 from pathlib import Path
 from typing import BinaryIO
 
-from crf.data.contamination import sentence_fingerprint
+from crf.data.contamination import AuditReport, sentence_fingerprint
 from crf.data.identity import sampling_priority
 from crf.data.records import SentenceRecord, parse_sentence_record
 from crf.data.segmentation import segmentation_metadata
 from crf.models.confidence import ConfidenceCandidate
-from crf.utils.artifacts import _parent_fd, atomic_writer
+from crf.models.selection_diagnostics import selection_summary
+from crf.utils.artifacts import _parent_fd, atomic_writer, publish_bytes
 from crf.utils.config import PipelineConfig, parse_config
 from crf.utils.paths import validate_output_path
 from crf.utils.resources import MemoryMonitor
-from crf.utils.serialization import ValidationError, jsonl_bytes, sha256_value
+from crf.utils.serialization import (
+    ValidationError,
+    config_sha256,
+    json_bytes,
+    jsonl_bytes,
+    sha256_value,
+)
 
 
 @dataclass(frozen=True)
@@ -90,6 +98,8 @@ def freeze_datasets(
     repository_root: Path,
     run_id: str,
     gate_model_sha256: str,
+    all_scored: bool = False,
+    audit_report: Callable[[], AuditReport] | None = None,
 ) -> tuple[FrozenDataset, ...]:
     """Consume each input once; freeze each threshold once for all subsequent fits.
 
@@ -112,6 +122,9 @@ def freeze_datasets(
     with _parent_fd(directory.relative_to(root), root, create=True) as parent:
         os.mkdir(directory.name, mode=0o700, dir_fd=parent)
     results: list[FrozenDataset] = []
+    summaries: list[dict[str, object]] = []
+    if type(all_scored) is not bool:
+        raise ValidationError("all_scored must be boolean")
     with closing(sqlite3.connect(directory / "candidates.sqlite3")) as db:
         try:
             db.execute("PRAGMA temp_store=FILE")
@@ -120,9 +133,12 @@ def freeze_datasets(
                 "CREATE TABLE gold (ordinal INTEGER PRIMARY KEY, id TEXT UNIQUE, body BLOB)"
             )
             db.execute(
-                "CREATE TABLE pool (priority TEXT, fingerprint TEXT UNIQUE, id TEXT UNIQUE, confidence REAL, tokens INTEGER, body BLOB)"
+                "CREATE TABLE pool (priority TEXT, fingerprint TEXT UNIQUE, id TEXT UNIQUE, confidence REAL, tokens INTEGER, body BLOB, source TEXT)"
             )
             db.execute("CREATE INDEX priority_order ON pool(priority, fingerprint)")
+            db.execute("CREATE TABLE pos (fingerprint TEXT, label TEXT, n INTEGER)")
+            db.execute("CREATE TABLE selected (fingerprint TEXT PRIMARY KEY)")
+            upstream: dict[str, object] | None = None
             with MemoryMonitor(config.resources.memory_budget_mib) as preparation:
                 gold_tokens = 0
                 for ordinal, record in enumerate(gold_records):
@@ -156,23 +172,57 @@ def freeze_datasets(
                     record = _pseudo_record(candidate, config, gate_model_sha256)
                     pseudo = record.pseudo
                     assert pseudo is not None
+                    if not all_scored and pseudo.min_confidence < min(
+                        config.self_training.thresholds
+                    ):
+                        raise ValidationError(
+                            "Minimum-threshold pool contains confidence rejects; use all_scored=True"
+                        )
                     db.execute(
-                        "INSERT INTO pool VALUES (?, ?, ?, ?, ?, ?)",
+                        "INSERT INTO pool VALUES (?, ?, ?, ?, ?, ?, ?)",
                         (
                             pseudo.sampling_priority,
                             pseudo.sentence_fingerprint,
                             record.sentence_id,
                             pseudo.min_confidence,
                             len(record.token_ids),
-                            jsonl_bytes(record.to_dict()),
+                            jsonl_bytes(record.to_dict())
+                            if pseudo.min_confidence
+                            >= min(config.self_training.thresholds)
+                            else None,
+                            record.source_path,
                         ),
                     )
+                    db.executemany(
+                        "INSERT INTO pos VALUES (?, ?, ?)",
+                        (
+                            (pseudo.sentence_fingerprint, label, n)
+                            for label, n in Counter(record.target_labels).items()
+                        ),
+                    )
+                if audit_report is not None:
+                    audit = audit_report()
+                    if audit.config_sha256 != config_sha256(config):
+                        raise ValidationError("Audit configuration mismatch")
+                    if all_scored:
+                        total, tokens = db.execute(
+                            "SELECT COUNT(*), COALESCE(SUM(tokens), 0) FROM pool"
+                        ).fetchone()
+                        if (total, tokens) != (
+                            audit.accepted_sentence_count,
+                            audit.accepted_token_count,
+                        ):
+                            raise ValidationError(
+                                "Audit and scored stream counts disagree"
+                            )
+                    upstream = audit.to_dict()
                 db.commit()
             preparation.ensure_success()
             for index, threshold in enumerate(sorted(config.self_training.thresholds)):
                 destination = (
                     root / "data/processed" / run_id / f"extended_{index:03d}.jsonl"
                 )
+                db.execute("DELETE FROM selected")
                 digest = hashlib.sha256()
                 selected_tokens = selected_sentences = 0
                 writer_monitor = MemoryMonitor(config.resources.memory_budget_mib)
@@ -197,8 +247,8 @@ def freeze_datasets(
                             writer_monitor.checkpoint()
                             stream.write(body)
                             digest.update(body)
-                        for tokens, body in db.execute(
-                            "SELECT tokens, body FROM pool WHERE confidence >= ? ORDER BY priority, fingerprint",
+                        for fingerprint, tokens, body in db.execute(
+                            "SELECT fingerprint, tokens, body FROM pool WHERE confidence >= ? ORDER BY priority, fingerprint",
                             (threshold,),
                         ):
                             writer_monitor.checkpoint()
@@ -206,8 +256,12 @@ def freeze_datasets(
                                 continue
                             stream.write(body)
                             digest.update(body)
+                            db.execute(
+                                "INSERT INTO selected VALUES (?)", (fingerprint,)
+                            )
                             selected_tokens += tokens
                             selected_sentences += 1
+                        summaries.append(selection_summary(db, threshold, cap))
                 results.append(
                     FrozenDataset(
                         threshold,
@@ -223,4 +277,27 @@ def freeze_datasets(
             raise ValidationError("Duplicate sampling sentence or fingerprint") from exc
         finally:
             db.close()
+    report = dict(
+        schema_version=1,
+        run_id=run_id,
+        config_sha256=config_sha256(config),
+        confidence_denominator="all_scored" if all_scored else "minimum_threshold_pool",
+        upstream_audit=upstream,
+        thresholds=summaries,
+    )
+    with MemoryMonitor(config.resources.memory_budget_mib) as report_monitor:
+        content = json_bytes(report)
+    report_monitor.ensure_success()
+
+    def validate_report(stream: BinaryIO) -> None:
+        report_monitor.ensure_success()
+        if stream.read() != content:
+            raise ValidationError("Selection diagnostics changed")
+
+    publish_bytes(
+        root / "reports" / run_id / "pseudo_selection.json",
+        content,
+        root,
+        validate=validate_report,
+    )
     return tuple(results)

@@ -10,7 +10,7 @@ import pytest
 from crf.data.identity import InputIdentity, sentence_id
 from crf.data.records import SentenceRecord, parse_sentence_record
 from crf.evaluation import ModelReference
-from crf.models import bundles, search
+from crf.models import bundles, reuse, sampling, search
 from crf.models.bundles import load_bundle
 from crf.models.search import (
     BaselineTrial,
@@ -58,7 +58,7 @@ def records(config: PipelineConfig, role: str) -> tuple[SentenceRecord, ...]:
 
 @pytest.fixture(autouse=True)
 def controlled_monitor(monkeypatch: pytest.MonkeyPatch) -> None:
-    for module in (search, bundles):
+    for module in (search, bundles, reuse, sampling):
         monkeypatch.setattr(
             module,
             "MemoryMonitor",
@@ -374,3 +374,193 @@ def test_mapped_custom_grid_is_frozen_and_sorted(
     assert [dict(t.crf_parameters)["c1"] for t in result.trials] == [0.1, 1.0]
     assert len(result.trials) == 2
     assert all(t.validation_macro_f1 == pytest.approx(2 / 14) for t in result.trials)
+
+
+@pytest.mark.integration
+def test_empty_reuses_27_trials_without_fitting(
+    artifact_repository: Path,
+    artifact_config: PipelineConfig,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Locked native CRF baseline only; reuse cannot fit or infer again."""
+    baseline = execute(artifact_repository, artifact_config)
+    datasets = sampling.freeze_datasets(
+        records(artifact_config, "train_gold"),
+        [],
+        config=artifact_config,
+        repository_root=artifact_repository,
+        run_id="run",
+        gate_model_sha256=baseline.gate.model_sha256,
+    )
+
+    def forbidden(*args: Any, **kwargs: Any) -> Any:
+        raise AssertionError("reuse must not fit or infer")
+
+    monkeypatch.setattr(search, "fit_candidate", forbidden)
+    monkeypatch.setattr(search, "score_validation", forbidden)
+    result = reuse.reuse_empty_selections(
+        datasets,
+        baseline,
+        config=artifact_config,
+        repository_root=artifact_repository,
+        run_id="run",
+    )
+    assert result.all_empty and result.retained_gate == baseline.gate
+    assert len(result.trials) == 27
+    assert len({t.trial_id for t in result.trials}) == 27
+    for trial in result.trials:
+        raw = trial.to_dict()
+        assert raw["status"] == "reused" and raw["stage"] == "final"
+        assert raw["model_ref"] == trial.baseline.model_ref.to_dict()
+        assert raw["training_dataset_sha256"] == trial.baseline.training_dataset_sha256
+        assert raw["validation_accuracy"] == trial.baseline.validation_accuracy
+    report = loads_json(result.report_path.read_bytes())
+    assert report["self_training_status"] == "not_performed_empty_selection"
+    assert report["augmentation_gain_claimed"] is False
+
+
+@pytest.mark.parametrize(
+    "fault", ["dataset", "model", "metadata", "metrics", "missing", "grid", "gate"]
+)
+def test_reuse_rejects_bad_cache(
+    artifact_repository: Path, artifact_config: PipelineConfig, fault: str
+) -> None:
+    config = replace(
+        artifact_config,
+        training=replace(artifact_config.training, c1_grid=(0.1,), c2_grid=(0.1,)),
+    )
+    baseline = execute(artifact_repository, config)
+    datasets = sampling.freeze_datasets(
+        records(config, "train_gold"),
+        [],
+        config=config,
+        repository_root=artifact_repository,
+        run_id="run",
+        gate_model_sha256=baseline.gate.model_sha256,
+    )
+    directory = artifact_repository / "models/run/candidates/baseline_000"
+    if fault == "dataset":
+        datasets[0].path.write_bytes(b"{}\n")
+    elif fault in {"model", "metadata"}:
+        (
+            directory / ("model.joblib" if fault == "model" else "metadata.json")
+        ).write_bytes(b"corrupt")
+    elif fault in {"metrics", "missing"}:
+        path = artifact_repository / "reports/run/validation/baseline_000/metrics.json"
+        if fault == "missing":
+            path.unlink()
+        else:
+            path.write_bytes(b"{}")
+    elif fault == "grid":
+        baseline = replace(baseline, trials=())
+    else:
+        baseline = replace(baseline, gate=replace(baseline.gate, model_sha256="f" * 64))
+    with pytest.raises((ValueError, OSError)):
+        reuse.reuse_empty_selections(
+            datasets,
+            baseline,
+            config=config,
+            repository_root=artifact_repository,
+            run_id="run",
+        )
+    assert not (artifact_repository / "reports/run/empty_reuse.json").exists()
+
+
+def test_mixed_empty_reuses_only_empty_threshold(
+    artifact_repository: Path, artifact_config: PipelineConfig
+) -> None:
+    from crf.data.literature import RawSentence, iter_literature
+    from crf.models.confidence import ConfidenceCandidate, SentenceConfidence
+
+    config = replace(
+        artifact_config,
+        training=replace(artifact_config.training, c1_grid=(0.1,), c2_grid=(0.1,)),
+    )
+    baseline = execute(artifact_repository, config)
+    raw = next(
+        s
+        for s in iter_literature(config, artifact_repository)
+        if isinstance(s, RawSentence)
+    )
+    candidate = ConfidenceCandidate(
+        raw,
+        SentenceConfidence(
+            ("NOUN",) * len(raw.feature_forms), (0.95,) * len(raw.feature_forms)
+        ),
+    )
+    datasets = sampling.freeze_datasets(
+        records(config, "train_gold"),
+        [candidate],
+        config=config,
+        repository_root=artifact_repository,
+        run_id="run",
+        gate_model_sha256=baseline.gate.model_sha256,
+    )
+    result = reuse.reuse_empty_selections(
+        datasets,
+        baseline,
+        config=config,
+        repository_root=artifact_repository,
+        run_id="run",
+    )
+    assert not result.all_empty and result.retained_gate is None
+    assert [t.threshold for t in result.trials] == [0.98]
+    report = loads_json(result.report_path.read_bytes())
+    assert report["self_training_status"] == "nonempty_thresholds_pending"
+
+
+def test_reuse_resource_and_existing_report(
+    artifact_repository: Path,
+    artifact_config: PipelineConfig,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from crf.utils.paths import PathValidationError
+
+    config = replace(
+        artifact_config,
+        training=replace(artifact_config.training, c1_grid=(0.1,), c2_grid=(0.1,)),
+    )
+    baseline = execute(artifact_repository, config)
+    datasets = sampling.freeze_datasets(
+        records(config, "train_gold"),
+        [],
+        config=config,
+        repository_root=artifact_repository,
+        run_id="run",
+        gate_model_sha256=baseline.gate.model_sha256,
+    )
+    original = MemoryMonitor.__exit__
+
+    def fail(self: MemoryMonitor, *args: Any) -> Any:
+        original(self, *args)
+        raise MemoryBudgetExceeded("reuse exit")
+
+    with monkeypatch.context() as patch:
+        patch.setattr(MemoryMonitor, "__exit__", fail)
+        with pytest.raises(MemoryBudgetExceeded, match="reuse exit"):
+            reuse.reuse_empty_selections(
+                datasets,
+                baseline,
+                config=config,
+                repository_root=artifact_repository,
+                run_id="run",
+            )
+    path = artifact_repository / "reports/run/empty_reuse.json"
+    assert not path.exists()
+    first = reuse.reuse_empty_selections(
+        datasets,
+        baseline,
+        config=config,
+        repository_root=artifact_repository,
+        run_id="run",
+    )
+    content = first.report_path.read_bytes()
+    with pytest.raises((PathValidationError, FileExistsError)):
+        reuse.reuse_empty_selections(
+            datasets,
+            baseline,
+            config=config,
+            repository_root=artifact_repository,
+            run_id="run",
+        )
+    assert path.read_bytes() == content

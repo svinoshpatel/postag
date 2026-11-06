@@ -6,7 +6,7 @@ Goals, prerequisites, acceptance criteria and task status. See [AGENTS.md](AGENT
 
 Implement a reproducible Ukrainian CRF self-training pipeline with isolated development and final evaluation, usable raw-text inference, and validated run artifacts. Preserve the approved experiment design and original datasets.
 
-Completed goals: M1–M5 (fixture-based acceptance). Next: M6 pseudo-label confidence and sampling. Production-corpus readiness and end-to-end pipeline completion remain separate goals; evidence is in [HISTORY.md](docs/HISTORY.md).
+Completed goals: M1–M6 (fixture-based acceptance). Next: M7 development orchestration and frozen selection. Production-corpus readiness and end-to-end pipeline completion remain separate goals; evidence is in [HISTORY.md](docs/HISTORY.md).
 
 Gold-corpus availability, release identity, and compatibility checks are pending. Small deterministic fixtures support implementation and offline verification without production data. Full corpus runs have a separate readiness gate below; missing inputs must not be replaced with another split or fabricated data. No sprint duration or delivery estimate is assumed.
 
@@ -109,7 +109,7 @@ Prerequisites: milestones 2–3. Architecture: [Training & Model-Selection Contr
 
 ### 6. Implement Pseudo-Label Confidence and Sampling
 
-Task 2 scope: build a bounded disk-backed candidate index, apply seeded whole-sentence budgets per threshold, and publish reusable frozen datasets; verify offline.
+Task 3 scope: record selection diagnostics with explicit denominator coverage and verify/cache baseline reuse for empty thresholds.
 
 Prerequisites: milestones 4–5. Architecture: [Confidence & Sequence Acceptance](docs/ARCH.md) and [Pseudo-Label Sampling Contract](docs/ARCH.md#pseudo-label-sampling-contract).
 
@@ -117,7 +117,8 @@ Prerequisites: milestones 4–5. Architecture: [Confidence & Sequence Acceptance
   Evidence: [M6 task 1 history](docs/HISTORY.md#m6-task-1--viterbi-confidence-and-sentence-acceptance). Offline fixture acceptance; production inference remains pending.
 - [x] Implement deterministic disk-backed priority ordering and whole-sentence sampling. Acceptance: the approved token cap is respected, oversized remaining-budget candidates are skipped without splitting, underfilled selections are valid, and each threshold's frozen dataset is reused across its fits.
   Evidence: [M6 task 2 history](docs/HISTORY.md#m6-task-2--deterministic-whole-sentence-sampling). Frozen dataset references are ready for reuse; fit orchestration remains M7.
-- [ ] Record acceptance, exclusion, source/POS distribution, and cap-utilization diagnostics. Acceptance: empty selections reuse corresponding baseline candidates and cached validation results without retraining or claiming augmentation gains.
+- [x] Record acceptance, exclusion, source/POS distribution, and cap-utilization diagnostics. Acceptance: empty selections reuse corresponding baseline candidates and cached validation results without retraining or claiming augmentation gains.
+  Evidence: [M6 task 3 history](docs/HISTORY.md#m6-task-3--selection-diagnostics-and-empty-baseline-reuse). Verified cached reuse and diagnostics offline; combined development orchestration remains M7.
 
 ### 7. Orchestrate Development and Freeze Selection
 
@@ -152,6 +153,6 @@ These items are separate from fixture-based implementation acceptance. Do not ma
 
 ## Next Priorities and Blockers
 
-- Implement M6 selection diagnostics and explicit baseline reuse for empty augmentation.
+- Implement M7 development orchestration, complete trial accounting and frozen model selection.
 - Establish official gold availability/release identity, literature source separation and tokenizer compatibility before real-corpus experiments.
 - Preserve the restored lint/format baseline in subsequent work; see [refactoring verification](docs/HISTORY.md#refactoring-and-refinement). Historical verification results remain in [HISTORY.md](docs/HISTORY.md#verification-record).

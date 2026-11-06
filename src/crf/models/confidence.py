@@ -120,6 +120,21 @@ def iter_confidence_candidates(
     for threshold in thresholds:
         probability(threshold, "confidence threshold")
     minimum = min(thresholds)
+    for candidate in iter_scored_candidates(
+        sentences, model=model, config=config, monitor=monitor
+    ):
+        if candidate.confidence.accepts(minimum):
+            yield candidate
+
+
+def iter_scored_candidates(
+    sentences: Iterable[RawSentence],
+    *,
+    model: Any,
+    config: PipelineConfig,
+    monitor: MemoryMonitor | None = None,
+) -> Iterator[ConfidenceCandidate]:
+    """Score all contamination-eligible sentences, including confidence rejects."""
     expected = segmentation_metadata(
         adapter_version=config.preprocessing.tokenizer_adapter_version,
         normalizer_version=config.preprocessing.normalizer_version,
@@ -132,5 +147,4 @@ def iter_confidence_candidates(
         confidence = score_sentence(
             sentence.feature_forms, model=model, config=config, monitor=monitor
         )
-        if confidence.accepts(minimum):
-            yield ConfidenceCandidate(sentence, confidence)
+        yield ConfidenceCandidate(sentence, confidence)
