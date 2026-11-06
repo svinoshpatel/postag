@@ -363,6 +363,12 @@ Sidecars contain the complete canonical effective configuration, not a partial s
 
 Save/load verification uses fixed synthetic surface-form probes through the recorded feature/normalization versions; require identical predictions and all unrounded token marginals, including each Viterbi label's confidence. Synthetic probes do not access gold/literature or constitute model evaluation. Joblib uses pickle: these are trusted local artifacts; checksum/schema validation detects mismatches and corruption, not malicious code or authenticity. Native persistence and RSS monitoring remain best effort and exact environment matching is intentionally conservative.
 
+### Development Search Interface and Staged CLI Migration
+
+`crf.pipeline.develop` allocates a fresh run, records canonical configuration and opaque input identities, runs baseline selection, contamination-approved full-confidence inference, threshold sampling and verified empty reuse, then fits each nonempty final candidate from scratch. Frozen threshold datasets are streamed/validated on every fit, with exact byte identity checked before native optimization. Gold order and source snapshots remain fixed; only train/validation labels enter model APIs. Gate and final estimators are disposed between stages/candidates. Baseline search can expose its completed outcomes through an optional callback before ledger publication so an enclosing run retains actual fit outcomes even if that publication fails.
+
+The combined `reports/<run_id>/trials.jsonl` accounts for every planned baseline/final configuration, including failed and unexecuted outcomes on handled aborts. No automatic partial-run resume is provided. Intermediate search completion is not a completed experiment: during the M7 task-1 migration, `scripts/run_pipeline.py develop` returns JSON status `search_complete_pending_freeze`, with run ID and ledger path, and deliberately publishes neither `selected.json` nor successful `run.json`. M7 task 2 replaces this intermediate success path with validated freezing/completion before the CLI can authorize evaluation. Failure exits nonzero and leaves either a full terminal search ledger or explicitly incomplete artifacts if publication itself fails.
+
 ### Frozen Model Selection
 
 Write `models/<run_id>/selected.json` only after development completes successfully. It has exactly these required fields:

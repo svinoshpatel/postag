@@ -122,9 +122,12 @@ Prerequisites: milestones 4–5. Architecture: [Confidence & Sequence Acceptance
 
 ### 7. Orchestrate Development and Freeze Selection
 
+Task 1 scope: connect source snapshots, baseline search, audited inference, sampling/reuse and fresh final fits through the develop CLI; preserve the full planned trial ledger on handled failures. Frozen selection and successful run authorization remain task 2.
+
 Prerequisites: milestones 2–6. Architecture: [Frozen Model Selection](docs/ARCH.md#frozen-model-selection), [Automatic Run and Prediction Records](docs/ARCH.md#automatic-run-and-prediction-records), and [CLI & Configuration Contract](docs/ARCH.md).
 
-- [ ] Implement the `develop` CLI and final-model search. Acceptance: the default experiment accounts for nine baseline plus 27 final configurations; each final fit starts fresh unless baseline reuse applies; failed/unexecuted trials remain visible rather than shrinking the search.
+- [x] Implement the `develop` CLI and final-model search. Acceptance: the default experiment accounts for nine baseline plus 27 final configurations; each final fit starts fresh unless baseline reuse applies; failed/unexecuted trials remain visible rather than shrinking the search.
+  Evidence: [M7 task 1 history](docs/HISTORY.md#m7-task-1--develop-cli-and-final-model-search). Search-only CLI migration is explicit; frozen selection/completion remains task 2.
 - [ ] Implement final selection, matched gold-only control, immutable run history, and frozen model references. Acceptance: selection uses the prescribed validation tie breakers, all linked identities/checksums agree, and only a complete successful development run authorizes final evaluation.
 
 ### 8. Implement Frozen Evaluation and Standalone Prediction
@@ -153,6 +156,6 @@ These items are separate from fixture-based implementation acceptance. Do not ma
 
 ## Next Priorities and Blockers
 
-- Implement M7 development orchestration, complete trial accounting and frozen model selection.
+- Implement M7 final/control selection, immutable linked history validation and frozen run authorization.
 - Establish official gold availability/release identity, literature source separation and tokenizer compatibility before real-corpus experiments.
 - Preserve the restored lint/format baseline in subsequent work; see [refactoring verification](docs/HISTORY.md#refactoring-and-refinement). Historical verification results remain in [HISTORY.md](docs/HISTORY.md#verification-record).

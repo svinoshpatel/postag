@@ -3,7 +3,7 @@
 import hashlib
 import os
 import re
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any, BinaryIO, Literal, cast
@@ -131,6 +131,7 @@ def search_baseline(
     config: PipelineConfig,
     repository_root: Path,
     run_id: str,
+    on_trials: Callable[[tuple[BaselineTrial, ...]], None] | None = None,
 ) -> BaselineSearch:
     """Execute one fresh sequential search; only complete success returns a gate."""
     if not re.fullmatch(r"[A-Za-z0-9_-]+", run_id):
@@ -328,6 +329,8 @@ def search_baseline(
         )
     # A preparation failure precedes every candidate; none was executed.
     ledger = tuple(trials)
+    if on_trials is not None:
+        on_trials(ledger)
     content = b"".join(jsonl_bytes(trial.to_dict()) for trial in ledger)
     path = directory / "trials.jsonl"
 

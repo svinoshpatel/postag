@@ -199,6 +199,11 @@ class ContaminationAudit:
             )
         )
 
+    @property
+    def inputs(self) -> tuple[InputIdentity, ...]:
+        """Immutable source snapshot used by this audit."""
+        return self._inputs
+
     def _build(self) -> None:
         self._checkpoint()
         db = self._connection

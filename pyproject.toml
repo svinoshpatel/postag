@@ -36,6 +36,7 @@ include = [
     "/src/crf",
     "/tests",
     "/scripts/preview_tokenization.py",
+    "/scripts/run_pipeline.py",
     "/docs",
     "/AGENTS.md",
     "/PLAN.md",
