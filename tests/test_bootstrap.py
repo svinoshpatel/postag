@@ -104,3 +104,30 @@ def test_grouping(documents: list[str | None], expected: str) -> None:
 def test_invalid_partition_and_counts(units: Any, outcomes: Any) -> None:
     with pytest.raises(ValidationError):
         paired_bootstrap(units, outcomes, unit_type="sentence", resamples=2, seed=42)
+
+
+def test_repeated_explicit_document_start_is_ambiguous() -> None:
+    gold = tuple(
+        SimpleNamespace(
+            audit=SimpleNamespace(document_id="same", sentence_id=str(i)),
+            comments=("# newdoc id = same",),
+        )
+        for i in range(2)
+    )
+    kind, units, reason = resampling_units(gold)
+    assert kind == "sentence" and len(units) == 2 and reason
+
+
+def test_unknown_comment_prefix_is_not_a_document_boundary() -> None:
+    gold = (
+        SimpleNamespace(
+            audit=SimpleNamespace(document_id="same", sentence_id="a"),
+            comments=("# newdoc id = same",),
+        ),
+        SimpleNamespace(
+            audit=SimpleNamespace(document_id="same", sentence_id="b"),
+            comments=("# newdocumentation = custom metadata",),
+        ),
+    )
+    kind, units, reason = resampling_units(gold)
+    assert kind == "document" and len(units) == 1 and reason is None

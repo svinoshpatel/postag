@@ -35,9 +35,20 @@ def resampling_units(
 ) -> tuple[Literal["document", "sentence"], tuple[Unit, ...], str | None]:
     groups: dict[str, list[str]] = {}
     previous: str | None = None
+    started_documents: set[str] = set()
     complete = bool(gold)
     for sentence in gold:
         document = sentence.audit.document_id
+        explicit_start = any(
+            comment.removeprefix("#").split("=", 1)[0].strip()
+            in {"newdoc", "newdoc id"}
+            for comment in getattr(sentence, "comments", ())
+        )
+        if explicit_start and document is not None:
+            if document in started_documents:
+                complete = False
+                break
+            started_documents.add(document)
         if document is None or (document in groups and document != previous):
             complete = False
             break

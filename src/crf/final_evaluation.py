@@ -503,15 +503,21 @@ def _validate_final(
         if (
             any(
                 type(v) not in (int, float)
-                or not math.isfinite(cast(float, v))
                 or not -100 <= cast(float, v) <= 100
+                or not math.isfinite(cast(float, v))
                 for v in bounds
             )
             or cast(float, bounds[0]) > cast(float, bounds[1])
             or report["unavailable_reason"] is not None
         ):
             raise ValidationError("Invalid bootstrap interval")
-    diagnostic = loads_json(read_bytes(core.directory / "diagnostics.json"))
+    diagnostic = object_fields(
+        loads_json(read_bytes(core.directory / "diagnostics.json")),
+        {"schema_version", "run_id", "unit_type", "unit_count", "fallback_reason"},
+        "bootstrap diagnostics",
+    )
+    integer(diagnostic["schema_version"], "diagnostic schema", 1)
+    integer(diagnostic["unit_count"], "diagnostic unit count")
     if diagnostic != dict(
         schema_version=1,
         run_id=core.experiment.run_id,

@@ -6,7 +6,7 @@ Goals, prerequisites, acceptance criteria and task status. See [AGENTS.md](AGENT
 
 Implement a reproducible Ukrainian CRF self-training pipeline with isolated development and final evaluation, usable raw-text inference, and validated run artifacts. Preserve the approved experiment design and original datasets.
 
-Completed goals: M1–M7 (fixture-based acceptance). Next: M8 frozen evaluation and standalone prediction. Production-corpus readiness and end-to-end pipeline completion remain separate goals; evidence is in [HISTORY.md](docs/HISTORY.md).
+Completed goals: M1–M8 (fixture-based acceptance). Next: M9 integration coverage and implementation audit. Production-corpus readiness and end-to-end pipeline completion remain separate goals; evidence is in [HISTORY.md](docs/HISTORY.md).
 
 Gold-corpus availability, release identity, and compatibility checks are pending. Small deterministic fixtures support implementation and offline verification without production data. Full corpus runs have a separate readiness gate below; missing inputs must not be replaced with another split or fabricated data. No sprint duration or delivery estimate is assumed.
 
@@ -133,15 +133,16 @@ Prerequisites: milestones 2–6. Architecture: [Frozen Model Selection](docs/ARC
 
 ### 8. Implement Frozen Evaluation and Standalone Prediction
 
-Task 1 scope: frozen three-role inference/metrics and integrity-checked prediction cache; task 2 adds bootstrap/completion authorization; task 3 adds independent raw prediction. Verify and commit each increment.
+M8 scope: frozen three-role evaluation, paired resampling/completion authorization and independent raw prediction, verified and committed in separate increments.
 
 Prerequisites: milestones 5–7 for final evaluation; milestones 2–5 for standalone prediction. Architecture: [Evaluation Contract](docs/ARCH.md#evaluation-contract), [Final Evaluation Reports](docs/ARCH.md#final-evaluation-reports), and [Standalone Prediction Reports](docs/ARCH.md#standalone-prediction-reports).
 
 - [x] Implement the `evaluate` CLI, three-model alignment, comparisons, and test reports. Acceptance: no refitting or overrides occur; changed/incomplete experiments fail; valid completed results are returned from cache; development history remains unchanged.
-  Evidence: [M8 task 1 history](docs/HISTORY.md#m8-task-1--frozen-test-inference-and-metrics). Core inference cache is verified; task 2 adds signed comparison/bootstrap and final completion authorization.
+  Evidence: [M8 task 1 history](docs/HISTORY.md#m8-task-1--frozen-test-inference-and-metrics). Core inference/cache coverage is verified; completed signed comparison/bootstrap authorization is covered by task 2 below.
 - [x] Implement paired bootstrap and persisted resampling units. Acceptance: grouping/fallback, random generator, repeated-unit weighting, pooled accuracy, percentile interpolation, unavailable intervals, and integrity links follow the contract.
   Evidence: [M8 task 2 history](docs/HISTORY.md#m8-task-2--paired-bootstrap-and-evaluation-completion). Complete evaluation/cache authorization replaces the task-1 staged CLI status.
-- [ ] Implement the `predict` CLI and fresh standalone reports. Acceptance: recorded model preprocessing is used, low-confidence and repeated sentences remain eligible, resource exclusions are reported, and custom mapped labels are not presented as standard UD UPOS.
+- [x] Implement the `predict` CLI and fresh standalone reports. Acceptance: recorded model preprocessing is used, low-confidence and repeated sentences remain eligible, resource exclusions are reported, and custom mapped labels are not presented as standard UD UPOS.
+  Evidence: [M8 task 3 history](docs/HISTORY.md#m8-task-3--standalone-raw-prediction). Standalone encoding, resource boundaries, retention rules and copied-bundle inference verified offline.
 
 ### 9. Verify Integration and Complete Implementation
 
@@ -161,6 +162,6 @@ These items are separate from fixture-based implementation acceptance. Do not ma
 
 ## Next Priorities and Blockers
 
-- Implement M8 frozen comparative evaluation, paired bootstrap and standalone prediction.
+- Complete M9 end-to-end integration coverage and the full architecture/limitations audit.
 - Establish official gold availability/release identity, literature source separation and tokenizer compatibility before real-corpus experiments.
 - Preserve the restored lint/format baseline in subsequent work; see [refactoring verification](docs/HISTORY.md#refactoring-and-refinement). Historical verification results remain in [HISTORY.md](docs/HISTORY.md#verification-record).

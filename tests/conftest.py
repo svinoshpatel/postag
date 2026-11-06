@@ -53,13 +53,14 @@ def frozen_evaluation(
     """Tiny real frozen run shared by M8 tests; no production corpus/network."""
     from dataclasses import replace
 
-    from crf import experiments, final_evaluation, pipeline
+    from crf import experiments, final_evaluation, inference, pipeline
     from crf.models import bundles, reuse, sampling, search
     from crf.utils.resources import MemoryMonitor
 
     for module in (
         experiments,
         final_evaluation,
+        inference,
         pipeline,
         bundles,
         reuse,

@@ -198,20 +198,32 @@ def _validate_resources(resources: ResourceConfig) -> None:
         raise ValidationError("batch_tokens must be >= max_sentence_tokens")
 
 
-def iter_literature_events(
-    source: InputIdentity,
+@dataclass(frozen=True)
+class TextSentence:
+    paragraph_ordinal: int
+    sentence_ordinal: int
+    text: AdaptedSentence
+    preprocessing: SegmentationMetadata
+
+
+@dataclass(frozen=True)
+class TextExclusion:
+    reason: Literal["paragraph_chars", "sentence_chars", "sentence_tokens"]
+    paragraph_ordinal: int
+    sentence_ordinal: int | None
+    source_span: tuple[int, int]
+    characters: int
+    tokens: int | None
+
+
+def iter_text_events(
+    chunks: Iterable[str],
     *,
     config: PipelineConfig,
-    repository_root: Path,
+    source_label: str,
     monitor: MemoryMonitor | None = None,
-) -> Iterator[RawSentence | RawExclusion]:
-    """Yield sentences/exclusions incrementally; exhaust before accepting a source.
-
-    Oversized paragraphs are drained intact. Gold, overlap, MWT and confidence
-    policy are deliberately outside this label-free preprocessing interface.
-    """
-    if source.source_role != "literature":
-        raise ValidationError("Raw literature reader requires a literature source")
+) -> Iterator[TextSentence | TextExclusion]:
+    """Bound decoded text independently of its source eligibility or labels."""
     _validate_resources(config.resources)
     check_memory(monitor, expected_budget_mib=config.resources.memory_budget_mib)
     metadata = segmentation_metadata(
@@ -221,14 +233,13 @@ def iter_literature_events(
     resources = config.resources
     ordinal = 0
     for paragraph in _paragraphs(
-        _decoded_chunks(source, config, repository_root.resolve(), monitor),
+        chunks,
         resources.max_paragraph_chars,
     ):
         check_memory(monitor)
-        exclusion: RawExclusion | None = None
+        exclusion: TextExclusion | None = None
         if paragraph.text is None:
-            exclusion = RawExclusion(
-                source,
+            exclusion = TextExclusion(
                 "paragraph_chars",
                 paragraph.ordinal,
                 None,
@@ -238,7 +249,7 @@ def iter_literature_events(
             )
             logger.warning(
                 "%s: excluded %s (%d characters) at %s",
-                source.source_path,
+                source_label,
                 exclusion.reason,
                 exclusion.characters,
                 exclusion.source_span,
@@ -256,8 +267,7 @@ def iter_literature_events(
             span = normalized.source_span(start, end)
             characters = span[1] - span[0]
             if characters > resources.max_sentence_chars:
-                exclusion = RawExclusion(
-                    source,
+                exclusion = TextExclusion(
                     "sentence_chars",
                     paragraph.ordinal,
                     ordinal,
@@ -271,8 +281,7 @@ def iter_literature_events(
                 if not text.normalized_forms:
                     continue
                 if len(text.normalized_forms) > resources.max_sentence_tokens:
-                    exclusion = RawExclusion(
-                        source,
+                    exclusion = TextExclusion(
                         "sentence_tokens",
                         paragraph.ordinal,
                         ordinal,
@@ -281,28 +290,58 @@ def iter_literature_events(
                         len(text.normalized_forms),
                     )
                 else:
-                    yield RawSentence(
-                        source,
-                        sentence_id(
-                            "literature",
-                            source.source_path,
-                            source.source_sha256,
-                            ordinal,
-                        ),
-                        paragraph.ordinal,
-                        ordinal,
-                        text,
-                        metadata,
-                    )
+                    yield TextSentence(paragraph.ordinal, ordinal, text, metadata)
                     continue
             logger.warning(
                 "%s: excluded %s (%d characters) at %s",
-                source.source_path,
+                source_label,
                 exclusion.reason,
                 exclusion.characters,
                 exclusion.source_span,
             )
             yield exclusion
+
+
+def iter_literature_events(
+    source: InputIdentity,
+    *,
+    config: PipelineConfig,
+    repository_root: Path,
+    monitor: MemoryMonitor | None = None,
+) -> Iterator[RawSentence | RawExclusion]:
+    """Keep literature eligibility separate from the shared bounded text engine."""
+    if source.source_role != "literature":
+        raise ValidationError("Raw literature reader requires a literature source")
+    for event in iter_text_events(
+        _decoded_chunks(source, config, repository_root.resolve(), monitor),
+        config=config,
+        source_label=source.source_path,
+        monitor=monitor,
+    ):
+        if isinstance(event, TextSentence):
+            yield RawSentence(
+                source,
+                sentence_id(
+                    "literature",
+                    source.source_path,
+                    source.source_sha256,
+                    event.sentence_ordinal,
+                ),
+                event.paragraph_ordinal,
+                event.sentence_ordinal,
+                event.text,
+                event.preprocessing,
+            )
+        else:
+            yield RawExclusion(
+                source,
+                event.reason,
+                event.paragraph_ordinal,
+                event.sentence_ordinal,
+                event.source_span,
+                event.characters,
+                event.tokens,
+            )
 
 
 def iter_literature(

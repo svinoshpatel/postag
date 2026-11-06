@@ -9,6 +9,8 @@ from crf import final_evaluation
 from crf.evaluation import score_test
 from crf.utils.serialization import ValidationError
 
+pytestmark = pytest.mark.integration
+
 
 def test_frozen_three_roles_and_cache(
     frozen_evaluation: Any, monkeypatch: pytest.MonkeyPatch
@@ -197,3 +199,89 @@ def test_signed_differences_are_not_clamped() -> None:
             )
         )
     ) == pytest.approx((-20, -10))
+
+
+def test_distinct_augmented_role_references(
+    frozen_evaluation: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from dataclasses import replace
+
+    from crf import pipeline
+    from crf.models.confidence import ConfidenceCandidate, SentenceConfidence
+
+    root, experiment = frozen_evaluation
+    config = replace(
+        experiment.config,
+        self_training=replace(
+            experiment.config.self_training, pseudo_to_gold_ratio=1.0
+        ),
+    )
+    original = pipeline.iter_scored_candidates
+
+    def accepted(*args: Any, **kwargs: Any) -> Any:
+        for candidate in original(*args, **kwargs):
+            yield ConfidenceCandidate(
+                candidate.sentence,
+                SentenceConfidence(
+                    candidate.confidence.labels,
+                    (1.0,) * len(candidate.confidence.labels),
+                ),
+            )
+
+    monkeypatch.setattr(pipeline, "iter_scored_candidates", accepted)
+    augmented = pipeline.develop(config, root)
+    assert augmented.selection.final != augmented.selection.gate
+    result = final_evaluation.evaluate(root, augmented.run_id)
+    for role in final_evaluation.ROLES:
+        assert (
+            result.core.metrics["models"][role]["model_ref"]
+            == getattr(augmented.selection, role).to_dict()
+        )
+
+
+def test_evaluate_cli_and_frozen_seed(
+    frozen_evaluation: Any,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    import importlib.util
+    from pathlib import Path
+
+    root, experiment = frozen_evaluation
+    spec = importlib.util.spec_from_file_location(
+        "evaluate_cli", Path(__file__).resolve().parents[1] / "scripts/run_pipeline.py"
+    )
+    assert spec and spec.loader
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    monkeypatch.setattr(module, "configure_logging", lambda: None)
+    monkeypatch.chdir(root)
+    assert module.main(["evaluate", "--run-id", experiment.run_id, "--seed", "42"]) == 0
+    assert json.loads(capsys.readouterr().out)["status"] == "complete"
+    assert module.main(["evaluate", "--run-id", experiment.run_id, "--seed", "43"]) == 1
+    assert capsys.readouterr().out == ""
+
+
+@pytest.mark.parametrize("fault", ["boolean_diagnostic", "huge_interval"])
+def test_strict_auxiliary_numbers(frozen_evaluation: Any, fault: str) -> None:
+    import hashlib
+
+    root, experiment = frozen_evaluation
+    result = final_evaluation.evaluate(root, experiment.run_id)
+    if fault == "boolean_diagnostic":
+        path = result.core.directory / "diagnostics.json"
+        raw = json.loads(path.read_bytes())
+        raw["schema_version"] = True
+        path.write_text(json.dumps(raw), encoding="utf-8")
+    else:
+        path = result.core.directory / "comparison.json"
+        raw = json.loads(path.read_bytes())
+        raw["bootstrap"]["upper_pp"] = 10**400
+        path.write_text(json.dumps(raw), encoding="utf-8")
+        descriptor = json.loads(result.completion_path.read_bytes())
+        descriptor["outputs"]["comparison.json"] = hashlib.sha256(
+            path.read_bytes()
+        ).hexdigest()
+        result.completion_path.write_text(json.dumps(descriptor), encoding="utf-8")
+    with pytest.raises(ValueError):
+        final_evaluation.evaluate(root, experiment.run_id)
