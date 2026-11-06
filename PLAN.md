@@ -109,9 +109,12 @@ Prerequisites: milestones 2–3. Architecture: [Training & Model-Selection Contr
 
 ### 6. Implement Pseudo-Label Confidence and Sampling
 
+Task 1 scope: add reusable scoring, validated whole-sentence acceptance and a streaming minimum-threshold candidate pool; verify with offline fixtures.
+
 Prerequisites: milestones 4–5. Architecture: [Confidence & Sequence Acceptance](docs/ARCH.md) and [Pseudo-Label Sampling Contract](docs/ARCH.md#pseudo-label-sampling-contract).
 
-- [ ] Implement Viterbi-label marginals and complete-sentence acceptance. Acceptance: no token deletion or maximum-marginal substitution occurs; unrounded confidences and the minimum-grid-threshold candidate pool support every configured threshold.
+- [x] Implement Viterbi-label marginals and complete-sentence acceptance. Acceptance: no token deletion or maximum-marginal substitution occurs; unrounded confidences and the minimum-grid-threshold candidate pool support every configured threshold.
+  Evidence: [M6 task 1 history](docs/HISTORY.md#m6-task-1--viterbi-confidence-and-sentence-acceptance). Offline fixture acceptance; production inference remains pending.
 - [ ] Implement deterministic disk-backed priority ordering and whole-sentence sampling. Acceptance: the approved token cap is respected, oversized remaining-budget candidates are skipped without splitting, underfilled selections are valid, and each threshold's frozen dataset is reused across its fits.
 - [ ] Record acceptance, exclusion, source/POS distribution, and cap-utilization diagnostics. Acceptance: empty selections reuse corresponding baseline candidates and cached validation results without retraining or claiming augmentation gains.
 
@@ -148,6 +151,6 @@ These items are separate from fixture-based implementation acceptance. Do not ma
 
 ## Next Priorities and Blockers
 
-- Implement M6 Viterbi-label marginals and complete-sentence confidence acceptance.
+- Implement M6 deterministic disk-backed priority ordering and whole-sentence sampling.
 - Establish official gold availability/release identity, literature source separation and tokenizer compatibility before real-corpus experiments.
 - Preserve the restored lint/format baseline in subsequent work; see [refactoring verification](docs/HISTORY.md#refactoring-and-refinement). Historical verification results remain in [HISTORY.md](docs/HISTORY.md#verification-record).
