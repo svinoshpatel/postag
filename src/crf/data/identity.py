@@ -108,12 +108,24 @@ def digest_file(
 
 
 def sentence_id(
-    source_role: SourceRole, source_path: str, source_sha256: str, sentence_ordinal: int
+    source_role: SourceRole | Literal["raw"],
+    source_path: str,
+    source_sha256: str,
+    sentence_ordinal: int,
 ) -> str:
     """Hash the exact ordered JSON identity array, independently of text or labels."""
-    if source_role not in SOURCE_ROLES:
+    if source_role not in (*SOURCE_ROLES, "raw"):
         raise ValidationError("Invalid sentence source_role")
-    source_path_value(source_path)
+    if source_role == "raw" and PurePosixPath(source_path).is_absolute():
+        if (
+            PurePosixPath(source_path).as_posix() != source_path
+            or ".." in PurePosixPath(source_path).parts
+            or "\x00" in source_path
+            or "\\" in source_path
+        ):
+            raise ValidationError("Invalid absolute raw source path")
+    else:
+        source_path_value(source_path)
     sha256_value(source_sha256, "source_sha256")
     integer(sentence_ordinal, "sentence_ordinal", 1)
     return hashlib.sha256(

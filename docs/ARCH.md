@@ -483,6 +483,10 @@ Require `accuracy = correct_token_count / token_count`, matrix totals equal toke
 
 Store each successful development trial's metric report at `reports/<run_id>/validation/<trial_id>/metrics.json`, with its trial ID as the sole `models` key. Its primary metrics must match the trial history. Reused trials use the cached baseline metric values and the existing model reference, without repeating inference or claiming another fit.
 
+### Frozen Evaluation Implementation Boundary
+
+`crf.final_evaluation.evaluate_core` first authorizes development, asserts any supplied seed equals the frozen bootstrap seed, and writes aligned role predictions and test metrics without fitting. `evaluation/core.json` binds the four prediction/metric files to the original development/selection checksums, actual environment and successful monitoring. It is an inference-cache descriptor, not successful final evaluation. Existing partial caches are refused; valid caches are rescored from saved predictions without native inference. The task-1 CLI temporarily reports `predictions_complete_pending_bootstrap`; task 2 replaces this with complete paired-bootstrap reporting and the final evaluation completion authority. Failed/partial outputs cannot be overwritten or silently retried. The core descriptor remains an internal immutable stage record after final completion.
+
 ### Final Evaluation Reports
 
 Create new outputs under `reports/<run_id>/evaluation/`:

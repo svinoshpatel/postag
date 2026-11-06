@@ -6,7 +6,7 @@ from collections.abc import Iterable
 from dataclasses import dataclass
 from itertools import zip_longest
 from pathlib import Path
-from typing import BinaryIO, cast
+from typing import BinaryIO, Literal, cast
 
 from crf.data.normalization import lexical_form
 from crf.data.records import SentenceRecord
@@ -111,13 +111,14 @@ def _diagnostic(total: int, correct: int) -> dict[str, object]:
     )
 
 
-def score_validation(
+def _score_aligned(
     gold: Iterable[SentenceRecord],
     predictions: Iterable[SentencePrediction],
     *,
     config: PipelineConfig,
     vocabulary: GoldVocabulary,
     model_ref: ModelReference,
+    role: Literal["val_gold", "test_gold"],
 ) -> dict[str, object]:
     """Pool token counts with shared gold-derived masks; reject every alignment gap."""
     if vocabulary.effective_config_sha256 != config_sha256(config):
@@ -132,10 +133,10 @@ def score_validation(
             raise ValidationError("Missing or extra sentence prediction")
         if (
             record.record_type != "gold"
-            or record.source_role != "val_gold"
-            or record.source_path != config.data.val_gold.as_posix()
+            or record.source_role != role
+            or record.source_path != getattr(config.data, role).as_posix()
         ):
-            raise ValidationError("Validation scoring requires val_gold only")
+            raise ValidationError("Scoring source role mismatch")
         if record.sentence_id in seen:
             raise ValidationError("Duplicate evaluation sentence")
         seen.add(record.sentence_id)
@@ -186,6 +187,45 @@ def score_validation(
     )
 
 
+def score_validation(
+    gold: Iterable[SentenceRecord],
+    predictions: Iterable[SentencePrediction],
+    *,
+    config: PipelineConfig,
+    vocabulary: GoldVocabulary,
+    model_ref: ModelReference,
+) -> dict[str, object]:
+    return _score_aligned(
+        gold,
+        predictions,
+        config=config,
+        vocabulary=vocabulary,
+        model_ref=model_ref,
+        role="val_gold",
+    )
+
+
+def score_test(
+    gold: Iterable[SentenceRecord],
+    predictions: Iterable[SentencePrediction],
+    *,
+    config: PipelineConfig,
+    vocabulary: GoldVocabulary,
+    model_ref: ModelReference,
+    final_evaluation: bool = False,
+) -> dict[str, object]:
+    if final_evaluation is not True:
+        raise ValidationError("Test scoring requires explicit final evaluation")
+    return _score_aligned(
+        gold,
+        predictions,
+        config=config,
+        vocabulary=vocabulary,
+        model_ref=model_ref,
+        role="test_gold",
+    )
+
+
 def _close(actual: object, expected: object) -> bool:
     if isinstance(expected, dict):
         return (
@@ -211,17 +251,19 @@ def _close(actual: object, expected: object) -> bool:
     return type(actual) is type(expected) and actual == expected
 
 
-def validate_metric_report(value: object, config: PipelineConfig) -> dict[str, object]:
+def validate_metric_report(
+    value: object,
+    config: PipelineConfig,
+    *,
+    split: Literal["val_gold", "test_gold"] = "val_gold",
+) -> dict[str, object]:
     """Validate validation-report schema and derive all primary values from counts."""
     raw = object_fields(
         value,
         {"schema_version", "run_id", "split", "target_inventory", "models"},
         "metrics",
     )
-    if (
-        integer(raw["schema_version"], "schema_version") != 1
-        or raw["split"] != "val_gold"
-    ):
+    if integer(raw["schema_version"], "schema_version") != 1 or raw["split"] != split:
         raise ValidationError("Expected version-1 validation report")
     if not isinstance(raw["run_id"], str) or not re.fullmatch(
         r"[A-Za-z0-9_-]+", raw["run_id"]
@@ -231,7 +273,11 @@ def validate_metric_report(value: object, config: PipelineConfig) -> dict[str, o
     if raw["target_inventory"] != list(inventory):
         raise ValidationError("Metric target inventory mismatch")
     models = raw["models"]
-    if not isinstance(models, dict) or len(models) != 1:
+    if (
+        not isinstance(models, dict)
+        or (split == "val_gold" and len(models) != 1)
+        or (split == "test_gold" and set(models) != {"gate", "final", "gold_control"})
+    ):
         raise ValidationError("Validation report requires exactly one trial")
     for trial, entry in models.items():
         if not isinstance(trial, str) or not re.fullmatch(r"[A-Za-z0-9_-]+", trial):

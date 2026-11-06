@@ -6,6 +6,7 @@ import logging
 from collections.abc import Sequence
 from pathlib import Path
 
+from crf.final_evaluation import evaluate_core
 from crf.pipeline import DevelopmentIncomplete, develop
 from crf.utils.config import load_config
 from crf.utils.logging import configure_logging
@@ -24,10 +25,24 @@ def main(argv: Sequence[str] | None = None) -> int:
         default=None,
         help="Override configuration seed (default 42)",
     )
+    evaluation = commands.add_parser("evaluate", help="Evaluate a frozen run")
+    evaluation.add_argument("--run-id", required=True)
+    evaluation.add_argument("--seed", type=int, default=None)
     args = parser.parse_args(argv)
     configure_logging()
     try:
         root = Path.cwd()
+        if args.command == "evaluate":
+            core = evaluate_core(root, args.run_id, seed=args.seed)
+            print(
+                json.dumps(
+                    dict(
+                        status="predictions_complete_pending_bootstrap",
+                        run_id=core.experiment.run_id,
+                    )
+                )
+            )
+            return 0
         config = load_config(args.config, repository_root=root, seed=args.seed)
         result = develop(config, root)
     except DevelopmentIncomplete as exc:
