@@ -54,14 +54,16 @@ For IDE setup, see [PyCharm guidance](docs/PYCHARM.md).
 
 **Gold** means human-annotated data. A **token** is one modeled word or punctuation item. Do not combine or reshuffle the official gold splits. Test scores must not guide later setting selection.
 
+For the imported snapshot, exact revision, original-to-project filenames, statistics and checksums, see [DATA.md](docs/DATA.md).
+
 ### Arrange the files
 
 ```text
 data/raw/
 ├── gold/
-│   ├── uk_iu-ud-train.conllu
-│   ├── uk_iu-ud-dev.conllu
-│   └── uk_iu-ud-test.conllu
+│   ├── train_gold.conllu
+│   ├── val_gold.conllu
+│   └── test_gold.conllu
 └── literature/
     ├── book_01.txt
     └── book_02.txt
@@ -98,17 +100,17 @@ The pipeline separately removes exact gold-text overlaps and duplicate literatur
 
 Create `experiment.yml` in the repository root. This is a user-created configuration, not a required pre-existing file. `.yaml` also works when passed explicitly with `--config`.
 
-The following example exposes the supported sections and their default values. Replace the release placeholder and supply matching files before running. The authoritative [configuration contract](docs/ARCH.md#cli--configuration-contract) defines validation and compatibility rules.
+The following example exposes the supported sections and their default values. The example uses the imported snapshot documented in [DATA.md](docs/DATA.md); supply matching files before running. The authoritative [configuration contract](docs/ARCH.md#cli--configuration-contract) defines validation and compatibility rules.
 
 ```yaml
 config_version: 1
 seed: 42
 
 data:
-  train_gold: data/raw/gold/uk_iu-ud-train.conllu
-  val_gold: data/raw/gold/uk_iu-ud-dev.conllu
-  test_gold: data/raw/gold/uk_iu-ud-test.conllu
-  ud_release: "REPLACE_WITH_ACTUAL_RELEASE_TAG"
+  train_gold: data/raw/gold/train_gold.conllu
+  val_gold: data/raw/gold/val_gold.conllu
+  test_gold: data/raw/gold/test_gold.conllu
+  ud_release: "r2.17-1-gbcb3e6b"
   literature_dir: data/raw/literature
   source_encoding: utf-8
 
