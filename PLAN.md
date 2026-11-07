@@ -152,7 +152,8 @@ Prerequisites: milestones 1–8. Architecture: [Technical Verification Invariant
 
 - [x] Add and run deterministic integration coverage using small, intentional fixtures. Acceptance: the full develop/freeze/evaluate/predict flow, default search accounting, empty augmentation, isolation boundaries, schema/checksum rejection, and incomplete-output behavior are verified without production data or network access. Integration dependencies are documented.
   Evidence: [M9 task 1 history](docs/HISTORY.md#m9-task-1--complete-offline-workflow-integration). Default augmented/mapped-empty CLI flows and real-process smoke verified offline.
-- [ ] Run all four required checks and record actual results in [HISTORY.md](docs/HISTORY.md#verification-record). Acceptance: changed behavior is verified; any permitted unrelated pre-existing failures have evidence linked from affected completed tasks. Unavailable or skipped checks are never marked passed.
+- [x] Run all four required checks and record actual results in [HISTORY.md](docs/HISTORY.md#verification-record). Acceptance: changed behavior is verified; any permitted unrelated pre-existing failures have evidence linked from affected completed tasks. Unavailable or skipped checks are never marked passed.
+  Evidence: [M9 task 2 history](docs/HISTORY.md#m9-task-2--required-verification-gate). All four checks passed against the committed integration implementation.
 - [ ] Review implemented behavior against the complete architecture and document remaining nondeterminism or compatibility limitations. Acceptance: no required implementation work is hidden behind unchecked corpus-experiment results or unverified assumptions.
 
 ## Corpus Readiness and Experiment Gate
