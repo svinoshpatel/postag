@@ -6,7 +6,7 @@ Goals, prerequisites, acceptance criteria and task status. See [AGENTS.md](AGENT
 
 Implement a reproducible Ukrainian CRF self-training pipeline with isolated development and final evaluation, usable raw-text inference, and validated run artifacts. Preserve the approved experiment design and original datasets.
 
-Completed goals: M1–M8 (fixture-based acceptance). Next: M9 integration coverage and implementation audit. Production-corpus readiness and end-to-end pipeline completion remain separate goals; evidence is in [HISTORY.md](docs/HISTORY.md).
+Completed implementation goals: M1–M9 (fixture-based acceptance). Next: the separate corpus-readiness and real-experiment gates below. Production-corpus readiness and end-to-end pipeline completion remain separate goals; evidence is in [HISTORY.md](docs/HISTORY.md).
 
 Gold-corpus availability, release identity, and compatibility checks are pending. Small deterministic fixtures support implementation and offline verification without production data. Full corpus runs have a separate readiness gate below; missing inputs must not be replaced with another split or fabricated data. No sprint duration or delivery estimate is assumed.
 
@@ -154,7 +154,8 @@ Prerequisites: milestones 1–8. Architecture: [Technical Verification Invariant
   Evidence: [M9 task 1 history](docs/HISTORY.md#m9-task-1--complete-offline-workflow-integration). Default augmented/mapped-empty CLI flows and real-process smoke verified offline.
 - [x] Run all four required checks and record actual results in [HISTORY.md](docs/HISTORY.md#verification-record). Acceptance: changed behavior is verified; any permitted unrelated pre-existing failures have evidence linked from affected completed tasks. Unavailable or skipped checks are never marked passed.
   Evidence: [M9 task 2 history](docs/HISTORY.md#m9-task-2--required-verification-gate). All four checks passed against the committed integration implementation.
-- [ ] Review implemented behavior against the complete architecture and document remaining nondeterminism or compatibility limitations. Acceptance: no required implementation work is hidden behind unchecked corpus-experiment results or unverified assumptions.
+- [x] Review implemented behavior against the complete architecture and document remaining nondeterminism or compatibility limitations. Acceptance: no required implementation work is hidden behind unchecked corpus-experiment results or unverified assumptions.
+  Evidence: [M9 task 3 history](docs/HISTORY.md#m9-task-3--architecture-and-limitations-audit). Requirement review, reporting repair, current verification and explicit limitations are recorded separately from real-corpus gates.
 
 ## Corpus Readiness and Experiment Gate
 
@@ -166,6 +167,6 @@ These items are separate from fixture-based implementation acceptance. Do not ma
 
 ## Next Priorities and Blockers
 
-- Complete M9 end-to-end integration coverage and the full architecture/limitations audit.
+- Satisfy the corpus-readiness gate before starting a real development experiment.
 - Establish official gold availability/release identity, literature source separation and tokenizer compatibility before real-corpus experiments.
 - Preserve the restored lint/format baseline in subsequent work; see [refactoring verification](docs/HISTORY.md#refactoring-and-refinement). Historical verification results remain in [HISTORY.md](docs/HISTORY.md#verification-record).

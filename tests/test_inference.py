@@ -110,7 +110,7 @@ def test_resource_exclusions_preserve_suffix(
         if reason == "paragraph_chars"
         else "А" * (limits.max_sentence_chars + 1)
         if reason == "sentence_chars"
-        else "Кіт " * (limits.max_sentence_tokens + 1)
+        else " ".join(["Кіт"] * (limits.max_sentence_tokens + 1))
     )
     path = root / "large.txt"
     path.write_text(prefix + "\n\nПтах летить", encoding="utf-8")
@@ -123,6 +123,10 @@ def test_resource_exclusions_preserve_suffix(
         (result.completion_path.parent / "diagnostics.json").read_bytes()
     )
     assert diagnostics["resource_exclusions"] == {reason: 1}
+    assert diagnostics["resource_excluded_characters"] == {reason: len(prefix)}
+    assert diagnostics["resource_excluded_tokens"] == {
+        reason: limits.max_sentence_tokens + 1 if reason == "sentence_tokens" else None
+    }
     assert diagnostics["limitations"]
 
 
@@ -263,3 +267,22 @@ def test_boolean_input_byte_count_is_rejected(
     monkeypatch.setattr(inference, "publish_completion", invalid)
     with pytest.raises(ValueError, match="integer"):
         inference.predict(model_path(root, experiment), path, root)
+
+
+def test_excluded_volume_aggregates_without_token_guesses(
+    frozen_evaluation: Any,
+) -> None:
+    root, experiment = frozen_evaluation
+    size = experiment.config.resources.max_paragraph_chars + 3
+    path = root / "two_large_paragraphs.txt"
+    path.write_text(
+        "А" * size + "\n\n" + "Б" * size + "\n\nКіт спить", encoding="utf-8"
+    )
+    result = inference.predict(model_path(root, experiment), path, root)
+    report = json.loads(
+        (result.completion_path.parent / "diagnostics.json").read_bytes()
+    )
+    assert report["resource_exclusions"] == {"paragraph_chars": 2}
+    assert report["resource_excluded_characters"] == {"paragraph_chars": 2 * size}
+    assert report["resource_excluded_tokens"] == {"paragraph_chars": None}
+    assert result.sentence_count == 1 and result.token_count == 2

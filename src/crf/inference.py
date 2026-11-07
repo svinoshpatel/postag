@@ -47,6 +47,25 @@ class StreamState:
 
     decoded_characters: int = 0
     exclusions: Counter[str] = field(default_factory=Counter)
+    excluded_characters: Counter[str] = field(default_factory=Counter)
+    excluded_tokens: Counter[str] = field(default_factory=Counter)
+    unknown_token_reasons: set[str] = field(default_factory=set)
+
+    def record_exclusion(self, event: TextExclusion) -> None:
+        self.exclusions[event.reason] += 1
+        self.excluded_characters[event.reason] += event.characters
+        if event.tokens is None:
+            self.unknown_token_reasons.add(event.reason)
+        else:
+            self.excluded_tokens[event.reason] += event.tokens
+
+    def token_exclusions(self) -> dict[str, int | None]:
+        return {
+            reason: None
+            if reason in self.unknown_token_reasons
+            else self.excluded_tokens[reason]
+            for reason in self.exclusions
+        }
 
 
 @dataclass(frozen=True)
@@ -218,7 +237,7 @@ def predict(
                         monitor=monitor,
                     ):
                         if isinstance(event, TextExclusion):
-                            state.exclusions[event.reason] += 1
+                            state.record_exclusion(event)
                             continue
                         text = event.text
                         confidence = score_sentence(
@@ -259,6 +278,10 @@ def predict(
                             schema_version=1,
                             run_id=paths.run_id,
                             resource_exclusions=dict(state.exclusions),
+                            resource_excluded_characters=dict(
+                                state.excluded_characters
+                            ),
+                            resource_excluded_tokens=state.token_exclusions(),
                             decoded_characters=state.decoded_characters,
                             target_inventory=list(config.target_inventory),
                             label_space=label_space,
