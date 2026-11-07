@@ -146,9 +146,12 @@ Prerequisites: milestones 5–7 for final evaluation; milestones 2–5 for stand
 
 ### 9. Verify Integration and Complete Implementation
 
+Execution scope: add complete offline CLI workflow/failure coverage; run and record the required verification suite; then audit all architecture contracts and resolve implementation gaps before documenting remaining corpus/environment limitations. Commit each task separately.
+
 Prerequisites: milestones 1–8. Architecture: [Technical Verification Invariants](docs/ARCH.md#technical-verification-invariants); operating procedure: [Verification and Test Generation](AGENTS.md#4-verification-and-test-generation).
 
-- [ ] Add and run deterministic integration coverage using small, intentional fixtures. Acceptance: the full develop/freeze/evaluate/predict flow, default search accounting, empty augmentation, isolation boundaries, schema/checksum rejection, and incomplete-output behavior are verified without production data or network access. Integration dependencies are documented.
+- [x] Add and run deterministic integration coverage using small, intentional fixtures. Acceptance: the full develop/freeze/evaluate/predict flow, default search accounting, empty augmentation, isolation boundaries, schema/checksum rejection, and incomplete-output behavior are verified without production data or network access. Integration dependencies are documented.
+  Evidence: [M9 task 1 history](docs/HISTORY.md#m9-task-1--complete-offline-workflow-integration). Default augmented/mapped-empty CLI flows and real-process smoke verified offline.
 - [ ] Run all four required checks and record actual results in [HISTORY.md](docs/HISTORY.md#verification-record). Acceptance: changed behavior is verified; any permitted unrelated pre-existing failures have evidence linked from affected completed tasks. Unavailable or skipped checks are never marked passed.
 - [ ] Review implemented behavior against the complete architecture and document remaining nondeterminism or compatibility limitations. Acceptance: no required implementation work is hidden behind unchecked corpus-experiment results or unverified assumptions.
 
